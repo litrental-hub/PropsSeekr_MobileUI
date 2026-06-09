@@ -200,7 +200,7 @@ Brand.blueBorder = 'rgba(37,99,235,0.3)'
 - Stored in: `useAppStore` → `theme: 'dark' | 'light'`
 - Persisted to device storage via MMKV
 - Toggle function: `useAppStore(s => s.toggleTheme)`
-- Toggle button on: LoginScreen, RegistrationScreen, DashboardScreen (header)
+- Toggle button on: **ProfileScreen** (only)
 
 ---
 
@@ -341,19 +341,17 @@ RootNavigator (Stack)
 ### ✅ LoginScreen
 - **Route**: `Login`
 - **Features**: Mobile number input, Send OTP CTA, nav to Registration
-- **Theme toggle**: ☀️/🌙 top-right corner
 - **Mock**: Pressing "Send OTP" logs in directly (bypasses OTP for now)
 
 ### ✅ RegistrationScreen
 - **Route**: `Registration`
 - **Features**: Name, Mobile, Aadhaar/PAN (KYC), GST, RERA
 - **Validation**: react-hook-form + zod
-- **Theme toggle**: ☀️/🌙 top-right corner
 
 ### ✅ DashboardScreen
 - **Route**: `Dashboard`
 - **Features**:
-  - Header: Logo (horizontal) + Rental/Buy toggle + Theme toggle + Credits chip
+  - Header: Logo (horizontal) + Rental/Buy toggle + Credits chip
   - Location bar: Current area + listing count
   - Search box + Filter button
   - BHK filter chips (Sab, 1BHK, 2BHK, 3BHK, Commercial, Plot, Villa)
@@ -372,8 +370,11 @@ RootNavigator (Stack)
 ### 🔲 MatchesScreen / MatchDetailScreen
 - Where matched properties/requirements are shown
 
-### 🔲 ProfileScreen / NotificationsScreen
-- Broker profile, RERA/Aadhaar badges, rating
+### ✅ ProfileScreen / NotificationsScreen
+- Broker profile with editable details (Photo, Name, GST, Address, Email)
+- Theme toggle: ☀️/🌙 switch is exclusively available here
+- Log Out button
+- RERA/Aadhaar badges, rating (planned)
 
 ### 🔲 Properties screens (Add/Inventory/Detail)
 - Broker's own listed properties

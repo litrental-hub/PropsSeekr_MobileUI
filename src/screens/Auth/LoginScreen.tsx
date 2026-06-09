@@ -23,7 +23,6 @@ export default function LoginScreen() {
   const navigation = useNavigation<any>();
   const [phone, setPhone] = useState('');
   
-  const toggleTheme = useAppStore(s => s.toggleTheme);
   const { colors, type, isDark } = useAppTheme();
 
   const handleMockLogin = () => {
@@ -63,14 +62,6 @@ export default function LoginScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* Theme Toggle */}
-        <TouchableOpacity
-          style={[styles.themeToggle, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
-          onPress={toggleTheme}
-        >
-          <Text style={{ fontSize: 20 }}>{isDark ? '☀️' : '🌙'}</Text>
-        </TouchableOpacity>
-
         <View style={styles.content}>
 
           {/* ── Logo ── */}
@@ -164,16 +155,6 @@ const styles = StyleSheet.create({
 
   accentBar: {
     height: 3, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-  },
-
-  themeToggle: {
-    position: 'absolute',
-    top: 16,
-    right: 20,
-    zIndex: 10,
-    padding: 8,
-    borderRadius: 20,
-    borderWidth: 1,
   },
 
   content: { flex: 1, paddingHorizontal: 28, justifyContent: 'center' },

@@ -39,7 +39,6 @@ type RegistrationFormData = z.infer<typeof registrationSchema>;
 
 export default function RegistrationScreen() {
   const navigation = useNavigation<any>();
-  const toggleTheme = useAppStore(s => s.toggleTheme);
   const { colors, type, isDark } = useAppTheme();
 
   const { control, handleSubmit, formState: { errors } } = useForm<RegistrationFormData>({
@@ -72,14 +71,6 @@ export default function RegistrationScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* Theme Toggle */}
-        <TouchableOpacity
-          style={[styles.themeToggle, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
-          onPress={toggleTheme}
-        >
-          <Text style={{ fontSize: 20 }}>{isDark ? '☀️' : '🌙'}</Text>
-        </TouchableOpacity>
-
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -377,16 +368,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0,
     zIndex: 10,
-  },
-
-  themeToggle: {
-    position: 'absolute',
-    top: 16,
-    right: 20,
-    zIndex: 10,
-    padding: 8,
-    borderRadius: 20,
-    borderWidth: 1,
   },
 
   backBtn: { marginTop: 8, marginBottom: 20, alignSelf: 'flex-start' },

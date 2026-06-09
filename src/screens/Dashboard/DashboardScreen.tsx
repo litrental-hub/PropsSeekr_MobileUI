@@ -65,7 +65,7 @@ const MOCK_REQUIREMENTS = [
 // ── Main Screen ──────────────────────────────────────────────
 export default function DashboardScreen() {
   const navigation = useNavigation<Nav>();
-  const { creditsBalance, sectionType, setSectionType, toggleTheme } = useAppStore();
+  const { creditsBalance, sectionType, setSectionType } = useAppStore();
   const user = useAuthStore(s => s.user);
   
   const theme = useAppTheme();
@@ -139,14 +139,6 @@ export default function DashboardScreen() {
             })}
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {/* Theme Toggle */}
-            <TouchableOpacity
-              style={[styles.themeBtn, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
-              onPress={toggleTheme}
-            >
-              <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
-            </TouchableOpacity>
           <TouchableOpacity
             style={styles.creditsWrap}
             onPress={() => navigation.navigate('BuyCredits')}
@@ -165,7 +157,6 @@ export default function DashboardScreen() {
               </View>
             </LinearGradient>
           </TouchableOpacity>
-          </View>
         </View>
 
         {/* ── Location Bar ── */}
@@ -484,12 +475,6 @@ const styles = StyleSheet.create({
   modeBtnInner:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6 },
   modeBtnEmoji:     { fontSize: 12 },
   modeBtnText:      { fontSize: 12, fontWeight: '600' },
-
-  themeBtn: {
-    padding: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
 
   // Credits
   creditsWrap: { borderRadius: 20, overflow: 'hidden' },

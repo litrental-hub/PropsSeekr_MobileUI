@@ -18,6 +18,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAuthStore } from '../../store/authStore';
+import { useAppStore } from '../../store/appStore';
 
 // ── Validation ─────────────────────────────────────────────
 const profileSchema = z.object({
@@ -31,6 +32,7 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function ProfileScreen() {
   const logout = useAuthStore(s => s.logout);
+  const toggleTheme = useAppStore(s => s.toggleTheme);
   const { colors, type, isDark } = useAppTheme();
 
   // Local state for photo just to show UI interaction
@@ -71,6 +73,14 @@ export default function ProfileScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        {/* Theme Toggle */}
+        <TouchableOpacity
+          style={[styles.themeToggle, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
+          onPress={toggleTheme}
+        >
+          <Text style={{ fontSize: 20 }}>{isDark ? '☀️' : '🌙'}</Text>
+        </TouchableOpacity>
+
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -306,6 +316,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0,
     zIndex: 10,
+  },
+
+  themeToggle: {
+    position: 'absolute',
+    top: 16,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+    borderRadius: 20,
+    borderWidth: 1,
   },
 
   headline: {
