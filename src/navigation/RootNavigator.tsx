@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { enableScreens } from 'react-native-screens';
 import { useAuthStore } from '../store/authStore';
 
-enableScreens(false);
+enableScreens(true);
 
 // Auth Screens
 import LoginScreen from '../screens/Auth/LoginScreen';

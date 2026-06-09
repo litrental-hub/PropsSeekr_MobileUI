@@ -493,3 +493,33 @@ borderRadius: 18,
 | Keep Hindi/English mix in UI copy | Use pure English (breaks the brand voice) |
 | `activeOpacity={0.85}` on all buttons | Use default opacity |
 | `SafeAreaView edges={['top','bottom']}` | Skip safe area insets |
+
+---
+
+## 🔧 Troubleshooting & Android Emulator Setup
+
+### 1. Metro Port Config / "Unable to load script"
+If the emulator fails to fetch the JavaScript bundle from the host and shows a red "Unable to load script" screen, it is likely due to a Metro server port mismatch (usually defaulting to `8082` because port `8081` was occupied at some point).
+
+**Resolution steps:**
+1. Check the emulator's current bundle configuration in the React Native Dev Menu (`Cmd+M` on macOS / `adb shell input keyevent 82` -> **Change Bundle Location**).
+2. If it is configured to `10.0.2.2:8082` (or `8082` is mentioned in the instructions), launch Metro explicitly on port `8082`:
+   ```bash
+   npm run start -- --port 8082
+   ```
+3. Set up double ADB reverse port mappings so both `8081` and `8082` requests from the emulator are forwarded to Metro's active port `8082` on the host:
+   ```bash
+   export PATH="$HOME/Library/Android/sdk/platform-tools:$PATH"
+   adb reverse tcp:8081 tcp:8082
+   adb reverse tcp:8082 tcp:8082
+   ```
+
+### 2. White Screen on Startup
+If the app loads the bundle but displays a blank/white screen instead of rendering the `Login` or `Dashboard` UI:
+- **`enableScreens(false)` issue**: Setting `enableScreens(false)` under `react-native-screens` can crash/freeze the native stack navigator on Android. Ensure it is set to `enableScreens(true)` in [RootNavigator.tsx](file:///Users/shubhammali/Personal%20Project/PropSeekrUI/src/navigation/RootNavigator.tsx).
+- **Stale MMKV Cache**: Clear the app storage to reset state:
+  ```bash
+  export PATH="$HOME/Library/Android/sdk/platform-tools:$PATH"
+  adb shell pm clear com.propseekrui
+  ```
+
