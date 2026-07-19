@@ -44,8 +44,8 @@ apiClient.interceptors.response.use(
         return apiClient(originalRequest);
       } catch (_) {
         // Refresh failed — clear tokens and force logout
-        storage.delete(STORAGE_KEYS.ACCESS_TOKEN);
-        storage.delete(STORAGE_KEYS.REFRESH_TOKEN);
+        storage.remove(STORAGE_KEYS.ACCESS_TOKEN);
+        storage.remove(STORAGE_KEYS.REFRESH_TOKEN);
         // TODO: navigate to login screen via navigation ref
       }
     }

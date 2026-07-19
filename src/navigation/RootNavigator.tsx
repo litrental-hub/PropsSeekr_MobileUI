@@ -25,6 +25,7 @@ import MatchDetailScreen from '../screens/Matches/MatchDetailScreen';
 import SearchScreen from '../screens/Search/SearchScreen';
 import BuyCreditsScreen from '../screens/Credits/BuyCreditsScreen';
 import NotificationsScreen from '../screens/Profile/NotificationsScreen';
+import SettingsScreen from '../screens/Profile/SettingsScreen';
 
 export type RootStackParamList = {
   // Auth
@@ -44,6 +45,7 @@ export type RootStackParamList = {
   Search: { initialFilter?: string };
   BuyCredits: undefined;
   Notifications: undefined;
+  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -90,6 +92,7 @@ export default function RootNavigator() {
               options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
             />
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            <Stack.Screen name="Settings" component={SettingsScreen} />
           </>
         )}
       </Stack.Navigator>

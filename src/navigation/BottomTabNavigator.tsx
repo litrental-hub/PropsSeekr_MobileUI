@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet } from 'react-native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Colors } from '../constants/colors';
 import { FontSize, FontWeight } from '../constants/theme';
 import { useAppStore } from '../store/appStore';
@@ -23,24 +24,36 @@ export type BottomTabParamList = {
 const Tab = createBottomTabNavigator<BottomTabParamList>();
 
 interface TabIconProps {
-  emoji: string;
+  iconName?: string;
+  iconNameFocused?: string;
   label: string;
   focused: boolean;
   badge?: number;
+  balance?: number;
 }
 
-function TabIcon({ emoji, label, focused, badge }: TabIconProps) {
+function TabIcon({ iconName, iconNameFocused, label, focused, badge, balance }: TabIconProps) {
   return (
     <View style={styles.tabItem}>
       <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
-        <Text style={styles.emoji}>{emoji}</Text>
+        {balance !== undefined ? (
+          <Text style={{ fontSize: 16, fontWeight: '800', color: focused ? Colors.brandTeal : Colors.textMuted }}>
+            {balance}
+          </Text>
+        ) : (
+          <MaterialCommunityIcons 
+            name={focused ? iconNameFocused! : iconName!} 
+            size={24} 
+            color={focused ? Colors.brandTeal : Colors.textMuted} 
+          />
+        )}
         {!!badge && badge > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
           </View>
         )}
       </View>
-      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
+      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
     </View>
   );
 }
@@ -48,6 +61,7 @@ function TabIcon({ emoji, label, focused, badge }: TabIconProps) {
 export default function BottomTabNavigator() {
   const unseenMatches = useAppStore(s => s.unseenMatches);
   const unreadNotifications = useAppStore(s => s.unreadNotifications);
+  const creditsBalance = useAppStore(s => s.creditsBalance);
 
   return (
     <Tab.Navigator
@@ -61,7 +75,7 @@ export default function BottomTabNavigator() {
         component={DashboardScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🏠" label="Home" focused={focused} />
+            <TabIcon iconName="home-outline" iconNameFocused="home" label="Home" focused={focused} />
           ),
         }}
       />
@@ -70,7 +84,7 @@ export default function BottomTabNavigator() {
         component={MatchesScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🤝" label="Matches" focused={focused} badge={unseenMatches} />
+            <TabIcon iconName="handshake-outline" iconNameFocused="handshake" label="Matches" focused={focused} badge={unseenMatches} />
           ),
         }}
       />
@@ -79,7 +93,7 @@ export default function BottomTabNavigator() {
         component={InventoryScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📋" label="Inventory" focused={focused} />
+            <TabIcon iconName="office-building-outline" iconNameFocused="office-building" label="Inventory" focused={focused} />
           ),
         }}
       />
@@ -88,7 +102,7 @@ export default function BottomTabNavigator() {
         component={CreditsScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="✦" label="Credits" focused={focused} />
+            <TabIcon label="Credits" focused={focused} balance={creditsBalance} />
           ),
         }}
       />
@@ -97,7 +111,7 @@ export default function BottomTabNavigator() {
         component={ProfileScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="👤" label="Profile" focused={focused} badge={unreadNotifications} />
+            <TabIcon iconName="account-outline" iconNameFocused="account" label="Profile" focused={focused} badge={unreadNotifications} />
           ),
         }}
       />
@@ -116,6 +130,8 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     alignItems: 'center',
+    justifyContent: 'center',
+    width: 70, // Prevents text from wrapping too early
     gap: 4,
   },
   iconWrap: {
@@ -127,19 +143,17 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   iconWrapActive: {
-    backgroundColor: 'rgba(10,110,94,0.12)',
-  },
-  emoji: {
-    fontSize: 20,
+    backgroundColor: 'transparent',
   },
   tabLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.medium,
+    fontSize: 10,
+    fontWeight: '500',
     color: Colors.textMuted,
+    textAlign: 'center',
   },
   tabLabelActive: {
     color: Colors.brandTeal,
-    fontWeight: FontWeight.bold,
+    fontWeight: '700',
   },
   badge: {
     position: 'absolute',

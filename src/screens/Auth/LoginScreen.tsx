@@ -26,20 +26,12 @@ export default function LoginScreen() {
   const { colors, type, isDark } = useAppTheme();
 
   const handleMockLogin = () => {
-    setAuth(
-      {
-        id: '1',
-        name: 'Rahul Kumar',
-        phone: '+91 98765 43210',
-        agency: 'PropSeekr Realty',
-        isAadhaarVerified: true,
-        isReraVerified: false,
-        locality: 'Vijay Nagar, Indore',
-        ratingScore: 4.7,
-      },
-      'mock-access-token',
-      'mock-refresh-token',
-    );
+    if (phone) {
+      navigation.navigate('OTP', { phone });
+    } else {
+      // Just navigate with empty phone if they didn't enter one
+      navigation.navigate('OTP', { phone: '9876543210' });
+    }
   };
 
   return (
@@ -157,14 +149,14 @@ const styles = StyleSheet.create({
     height: 3, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
   },
 
-  content: { flex: 1, paddingHorizontal: 28, justifyContent: 'center' },
+  content: { flex: 1, paddingHorizontal: 28, justifyContent: 'flex-start', paddingTop: 60 },
 
   // ── Logo
-  logoSection: { alignItems: 'center', marginBottom: 28 },
+  logoSection: { alignItems: 'center', marginBottom: 12 },
 
   // Tagline
   taglineRow: {
-    flexDirection: 'row', alignItems: 'center', marginTop: 10,
+    flexDirection: 'row', alignItems: 'center', marginTop: 0,
   },
   taglineLine:  { width: 18, height: 1.5, backgroundColor: Brand.blue, marginHorizontal: 6 },
   taglineFind:  { fontSize: 11, fontWeight: '700', color: Brand.blue,  letterSpacing: 1.5 },
@@ -172,13 +164,13 @@ const styles = StyleSheet.create({
   taglineClose: { fontSize: 11, fontWeight: '700', color: Brand.teal,  letterSpacing: 1.5 },
 
   // Headline
-  headlineSection: { alignItems: 'center', marginBottom: 32 },
+  headlineSection: { alignItems: 'center', marginBottom: 24 },
   headline: {
-    fontSize: 30, fontWeight: '800', 
-    textAlign: 'center', letterSpacing: -0.5, lineHeight: 38, marginBottom: 12,
+    fontSize: 28, fontWeight: '800', 
+    textAlign: 'center', letterSpacing: -0.5, lineHeight: 36, marginBottom: 8,
   },
   sub: {
-    fontSize: 14, textAlign: 'center', lineHeight: 22,
+    fontSize: 13.5, textAlign: 'center', lineHeight: 20,
   },
 
   // Input

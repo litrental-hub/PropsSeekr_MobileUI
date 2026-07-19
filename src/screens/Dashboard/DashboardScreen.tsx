@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { useAppStore } from '../../store/appStore';
 import { useAuthStore } from '../../store/authStore';
@@ -72,12 +73,12 @@ export default function DashboardScreen() {
   const { colors, type, isDark } = theme;
 
   const [selectedBHK, setSelectedBHK] = useState('Sab');
-  const [activeTab, setActiveTab] = useState<'Available' | 'Looking' | 'Matched'>('Available');
+  const [activeTab, setActiveTab] = useState<'Available' | 'Looking'>('Available');
 
   const isRental = sectionType === 'Rentals';
   const tabCounts = isRental
-    ? { Available: 84, Looking: 43, Matched: 12 }
-    : { Available: 156, Looking: 72, Matched: 12 };
+    ? { Available: 84, Looking: 43 }
+    : { Available: 156, Looking: 72 };
 
   return (
     <View style={[styles.root, { backgroundColor: colors.navy }]}>
@@ -140,22 +141,13 @@ export default function DashboardScreen() {
           </View>
 
           <TouchableOpacity
-            style={styles.creditsWrap}
-            onPress={() => navigation.navigate('BuyCredits')}
+            style={styles.notifIconWrap}
+            onPress={() => navigation.navigate('Notifications')}
             activeOpacity={0.85}
           >
-            <LinearGradient
-              colors={[Brand.blue, Brand.teal]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.creditsGrad}
-            >
-              <Text style={styles.creditsIcon}>⊙</Text>
-              <View>
-                <Text style={styles.creditsValue}>{creditsBalance}</Text>
-                <Text style={styles.creditsLabel}>credits</Text>
-              </View>
-            </LinearGradient>
+            <MaterialCommunityIcons name="bell-outline" size={26} color={colors.textPrimary} />
+            {/* Optional notification dot */}
+            <View style={styles.notifBadge} />
           </TouchableOpacity>
         </View>
 
@@ -236,9 +228,9 @@ export default function DashboardScreen() {
             })}
           </ScrollView>
 
-          {/* ── Tabs: Available / Looking / Matched ── */}
+          {/* ── Tabs: Available / Looking ── */}
           <View style={[styles.tabsRow, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}>
-            {(['Available', 'Looking', 'Matched'] as const).map(tab => {
+            {(['Available', 'Looking'] as const).map(tab => {
               const active = activeTab === tab;
               return (
                 <TouchableOpacity
@@ -476,12 +468,26 @@ const styles = StyleSheet.create({
   modeBtnEmoji:     { fontSize: 12 },
   modeBtnText:      { fontSize: 12, fontWeight: '600' },
 
-  // Credits
-  creditsWrap: { borderRadius: 20, overflow: 'hidden' },
-  creditsGrad: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
-  creditsIcon:  { fontSize: 16, color: Brand.white },
-  creditsValue: { fontSize: 13, fontWeight: '800', color: Brand.white, lineHeight: 16 },
-  creditsLabel: { fontSize: 9, color: 'rgba(255,255,255,0.7)', lineHeight: 11 },
+  // Notifications
+  notifIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444', // Red dot for unread notifications
+    borderWidth: 1,
+    borderColor: '#FFF',
+  },
 
   // Location bar
   locationBar: {
@@ -528,7 +534,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingHorizontal: 16,
   },
-  tabItem:       { marginRight: 24, paddingVertical: 12, position: 'relative' },
+  tabItem:       { flex: 1, alignItems: 'center', paddingVertical: 12, position: 'relative' },
   tabText:       { fontSize: 14, fontWeight: '600' },
   tabCount:      { fontSize: 12 },
   tabUnderline:  { position: 'absolute', bottom: 0, left: 0, right: 0, height: 2.5, borderRadius: 2 },

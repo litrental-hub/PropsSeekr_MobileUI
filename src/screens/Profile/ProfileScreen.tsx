@@ -18,7 +18,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAuthStore } from '../../store/authStore';
-import { useAppStore } from '../../store/appStore';
+import { useTranslation } from 'react-i18next';
+import { useNavigation } from '@react-navigation/native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // ── Validation ─────────────────────────────────────────────
 const profileSchema = z.object({
@@ -32,8 +34,9 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function ProfileScreen() {
   const logout = useAuthStore(s => s.logout);
-  const toggleTheme = useAppStore(s => s.toggleTheme);
   const { colors, type, isDark } = useAppTheme();
+  const { t, i18n } = useTranslation();
+  const navigation = useNavigation<any>();
 
   // Local state for photo just to show UI interaction
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -73,14 +76,6 @@ export default function ProfileScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* Theme Toggle */}
-        <TouchableOpacity
-          style={[styles.themeToggle, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
-          onPress={toggleTheme}
-        >
-          <Text style={{ fontSize: 20 }}>{isDark ? '☀️' : '🌙'}</Text>
-        </TouchableOpacity>
-
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -91,8 +86,15 @@ export default function ProfileScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {/* Header */}
-            <Text style={[styles.headline, { color: colors.textPrimary }]}>My Profile</Text>
-            <Text style={[styles.sub, { color: colors.textSecondary }]}>Manage your broker details</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <View>
+                <Text style={[styles.headline, { color: colors.textPrimary, marginBottom: 0 }]}>{t('profile.myProfile')}</Text>
+                <Text style={[styles.sub, { color: colors.textSecondary }]}>{t('profile.manageDetails')}</Text>
+              </View>
+              <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={{ padding: 8 }}>
+                <MaterialCommunityIcons name="cog" size={28} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
 
             {/* Profile Photo Section */}
             <View style={styles.photoContainer}>
@@ -115,7 +117,7 @@ export default function ProfileScreen() {
             {/* Form */}
             <View style={styles.form}>
               {/* Email */}
-              <Field label="Email Address" error={errors.email?.message} colors={colors}>
+              <Field label={t('profile.emailAddress')} error={errors.email?.message} colors={colors}>
                 <Controller
                   control={control}
                   name="email"
@@ -135,10 +137,10 @@ export default function ProfileScreen() {
                 />
               </Field>
 
-              <SectionDivider title="COMPANY DETAILS" colors={colors} Brand={Brand} />
+              <SectionDivider title={t('profile.companyDetails')} colors={colors} Brand={Brand} />
 
               {/* Company Name */}
-              <Field label="Company Name *" error={errors.companyName?.message} colors={colors}>
+              <Field label={t('profile.companyName')} error={errors.companyName?.message} colors={colors}>
                 <Controller
                   control={control}
                   name="companyName"
@@ -158,7 +160,7 @@ export default function ProfileScreen() {
               </Field>
 
               {/* GST */}
-              <Field label="Company GST (Optional)" error={errors.companyGst?.message} colors={colors}>
+              <Field label={t('profile.companyGst')} error={errors.companyGst?.message} colors={colors}>
                 <Controller
                   control={control}
                   name="companyGst"
@@ -167,7 +169,7 @@ export default function ProfileScreen() {
                       prefix="🧾"
                       placeholder="e.g. 23ABCDE..."
                       hasError={!!errors.companyGst}
-                      value={value}
+                      value={value ?? ''}
                       onBlur={onBlur}
                       onChangeText={onChange}
                       autoCapitalize="characters"
@@ -179,7 +181,7 @@ export default function ProfileScreen() {
               </Field>
 
               {/* Address */}
-              <Field label="Company Address *" error={errors.companyAddress?.message} colors={colors}>
+              <Field label={t('profile.companyAddress')} error={errors.companyAddress?.message} colors={colors}>
                 <Controller
                   control={control}
                   name="companyAddress"
@@ -199,21 +201,21 @@ export default function ProfileScreen() {
               </Field>
 
               {/* Save Button */}
-              <TouchableOpacity onPress={handleSubmit(onSubmit)} activeOpacity={0.85} style={{ marginTop: 10 }}>
+              <TouchableOpacity onPress={handleSubmit(onSubmit)} activeOpacity={0.85} style={{ marginTop: 24 }}>
                 <LinearGradient
                   colors={[Brand.blue, '#1A8CD8', Brand.teal]}
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                   style={[styles.ctaBtn, { shadowColor: Brand.blue }]}
                 >
                   <Text style={styles.ctaBtnText}>
-                    {isDirty ? 'Save Changes' : 'Saved'}
+                    {isDirty ? t('profile.saveChanges') : t('profile.saved')}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
 
               {/* Logout Button */}
               <TouchableOpacity onPress={logout} activeOpacity={0.75} style={styles.logoutBtn}>
-                <Text style={styles.logoutText}>Log Out</Text>
+                <Text style={styles.logoutText}>{t('profile.logout')}</Text>
               </TouchableOpacity>
 
             </View>
@@ -318,14 +320,21 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
 
-  themeToggle: {
-    position: 'absolute',
-    top: 16,
-    right: 20,
-    zIndex: 10,
-    padding: 8,
-    borderRadius: 20,
-    borderWidth: 1,
+  segmentWrap: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  segmentBtn: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   headline: {

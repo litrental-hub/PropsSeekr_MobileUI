@@ -9,6 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -19,6 +21,7 @@ import { z } from 'zod';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAppStore } from '../../store/appStore';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
+import { register } from '../../api/auth';
 
 // ── Validation ─────────────────────────────────────────────
 const registrationSchema = z.object({
@@ -46,9 +49,29 @@ export default function RegistrationScreen() {
     defaultValues: { name: '', mobile: '', aadhaar: '', pan: '', gst: '', rera: '' },
   });
 
-  const onSubmit = (data: RegistrationFormData) => {
-    console.log('Registration Data:', data);
-    navigation.navigate('Login');
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  const onSubmit = async (data: RegistrationFormData) => {
+    try {
+      setIsLoading(true);
+      const payload = {
+        name: data.name,
+        mobile: data.mobile,
+        aadharNumber: data.aadhaar,
+        panCard: data.pan,
+        gstNumber: data.gst,
+        reraRegistrationNumber: data.rera,
+      };
+      
+      const response = await register(payload);
+      Alert.alert('Success', response.message || 'Registration successful.');
+      navigation.navigate('Login');
+    } catch (error: any) {
+      console.error('Registration Error:', error);
+      Alert.alert('Registration Failed', error.response?.data?.message || 'Something went wrong. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -235,14 +258,18 @@ export default function RegistrationScreen() {
               </Field>
 
               {/* CTA */}
-              <TouchableOpacity onPress={handleSubmit(onSubmit)} activeOpacity={0.85} style={{ marginTop: 8 }}>
+              <TouchableOpacity onPress={handleSubmit(onSubmit)} activeOpacity={0.85} style={{ marginTop: 8 }} disabled={isLoading}>
                 <LinearGradient
                   colors={[Brand.blue, '#1A8CD8', Brand.teal]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={[styles.ctaBtn, { shadowColor: Brand.blue }]}
                 >
-                  <Text style={styles.ctaBtnText}>Create My Account →</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.ctaBtnText}>Create My Account →</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 
