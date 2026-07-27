@@ -19,6 +19,9 @@ import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { FontSize, FontWeight } from '../../constants/theme';
+import { getMatches, unlockContact, MatchDTO } from '../../api/matches';
+import apiClient from '../../api/client';
+import { useAuthStore } from '../../store/authStore';
 
 // ── Types ─────────────────────────────────────────────────────
 interface MatchProperty {
@@ -65,15 +68,36 @@ interface Pagination {
 // ── Constants ─────────────────────────────────────────────────
 const UNLOCK_COST_RS = 300;
 
-// ── API ───────────────────────────────────────────────────────
-const BASE_URL =
-  'https://73t761f5q5.execute-api.ap-south-1.amazonaws.com/default/propseekr-file-processor/matches';
-const PAGE_SIZE = 20;
-
-async function fetchMatches(page: number): Promise<{ matches: Match[]; pagination: Pagination }> {
-  const res = await fetch(`${BASE_URL}?page=${page}&size=${PAGE_SIZE}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+// ── API Mappers ───────────────────────────────────────────────
+function mapDTOToMatch(dto: MatchDTO): Match {
+  return {
+    matchQuality: dto.quality,
+    scorePercent: dto.matchScore,
+    property: {
+      for: 'Sale',
+      type: dto.propertyTitle,
+      config: dto.propertyTitle,
+      price: `₹${(dto.price / 100000).toFixed(1)} L`,
+      size: 'N/A',
+      location: `${dto.locality}, ${dto.city}`,
+      brokerName: dto.ownerName || 'Hidden',
+      brokerPhone: dto.ownerMobile || 'Hidden',
+    },
+    buyer: {
+      lookingFor: 'Property',
+      type: dto.propertyTitle,
+      budget: `₹${(dto.price / 100000).toFixed(1)} L`,
+      location: `${dto.locality}, ${dto.city}`,
+      brokerName: dto.ownerName || 'Hidden',
+      brokerPhone: dto.ownerMobile || 'Hidden',
+    },
+    matchDetails: {
+      location: `${dto.locality}, ${dto.city}`,
+      price: `₹${(dto.price / 100000).toFixed(1)} L`,
+    },
+    // Keep ID to pass to unlock API
+    _id: dto.id,
+  } as Match & { _id: string };
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -121,6 +145,9 @@ export default function MatchesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  const { user } = useAuthStore();
+  const userId = user?.id || '';
+
   // Track which card indices have been unlocked
   const [unlockedIndices, setUnlockedIndices] = useState<Set<number>>(new Set());
 
@@ -129,6 +156,8 @@ export default function MatchesScreen() {
 
   // ── Initial load ─────────────────────────────────────────────
   const loadPage = useCallback(async (pageNum: number, reset = false) => {
+    if (!userId) return; // Wait until user is loaded
+
     if (reset) {
       setLoading(true);
       setError(null);
@@ -136,13 +165,14 @@ export default function MatchesScreen() {
       setLoadingMore(true);
     }
     try {
-      const data = await fetchMatches(pageNum);
+      const data = await getMatches(userId, pageNum, 20);
       if (!isMounted.current) return;
+      const mappedMatches = data.matches.map(mapDTOToMatch);
       if (reset) {
-        setMatches(data.matches);
+        setMatches(mappedMatches);
         setUnlockedIndices(new Set()); // reset unlock state on refresh
       } else {
-        setMatches(prev => [...prev, ...data.matches]);
+        setMatches(prev => [...prev, ...mappedMatches]);
       }
       setPagination(data.pagination);
       setPage(pageNum);
@@ -155,7 +185,7 @@ export default function MatchesScreen() {
       setLoadingMore(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => { loadPage(1, true); }, [loadPage]);
 
@@ -174,24 +204,40 @@ export default function MatchesScreen() {
   }, [loadingMore, loading, pagination, page, loadPage]);
 
   // ── Unlock handler ───────────────────────────────────────────
-  const handleUnlock = useCallback((index: number, match: Match) => {
+  const handleUnlock = useCallback((index: number, match: Match & { _id?: string }) => {
     Alert.alert(
       '🔓 Unlock Match',
-      `This will send a notification to the buyer's broker.\n\nIf the buyer confirms the property is still available, ₹${UNLOCK_COST_RS} will be deducted from your balance.\n\nProceed?`,
+      `This will deduct 1 Token (₹${UNLOCK_COST_RS}) to unlock the owner contact details.\n\nProceed?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: `Unlock (₹${UNLOCK_COST_RS})`,
+          text: `Unlock`,
           style: 'default',
-          onPress: () => {
-            // Mark as unlocked (reveals contact info)
-            setUnlockedIndices(prev => new Set([...prev, index]));
-            // Notification API — under development
-            Alert.alert(
-              '✅ Notification Sent',
-              `A notification has been sent to ${match.buyer.brokerName}.\n\nOnce they confirm the property is still available, ₹${UNLOCK_COST_RS} will be deducted from your balance.`,
-              [{ text: 'OK' }],
-            );
+          onPress: async () => {
+            if (!match._id) {
+              Alert.alert('Error', 'Invalid match ID.');
+              return;
+            }
+            try {
+              const res = await unlockContact({ propertyRequestId: match._id });
+              
+              setMatches(prev => {
+                const newMatches = [...prev];
+                const newMatch = { ...newMatches[index] };
+                newMatch.property.brokerName = res.unlockedContact.ownerName;
+                newMatch.property.brokerPhone = res.unlockedContact.ownerMobile;
+                newMatch.buyer.brokerName = res.unlockedContact.ownerName;
+                newMatch.buyer.brokerPhone = res.unlockedContact.ownerMobile;
+                newMatches[index] = newMatch;
+                return newMatches;
+              });
+              
+              setUnlockedIndices(prev => new Set([...prev, index]));
+              Alert.alert('✅ Contact Unlocked', res.message);
+            } catch (err: any) {
+              console.error('Unlock error:', err);
+              Alert.alert('Unlock Failed', err.response?.data?.message || 'Something went wrong.');
+            }
           },
         },
       ],

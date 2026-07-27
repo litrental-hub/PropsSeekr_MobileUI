@@ -27,21 +27,21 @@ export function UnlockBottomSheet({ visible, onClose, onConfirm }: UnlockBottomS
       </View>
 
       <View style={styles.costContainer}>
-        <Text style={styles.costValue}>{cost} credit</Text>
+        <Text style={styles.costValue}>{cost} token</Text>
         <Text style={styles.costLabel}>unlock karne ke liye</Text>
       </View>
 
       <View style={styles.balanceRow}>
         <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Aapka balance:</Text>
-        <Text style={[styles.balanceValue, { color: colors.textPrimary }]}>{creditsBalance} credits</Text>
+        <Text style={[styles.balanceValue, { color: colors.textPrimary }]}>{creditsBalance} tokens</Text>
       </View>
       <View style={styles.balanceRow}>
-        <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Is unlock ke baad:</Text>
-        <Text style={[styles.balanceValue, { color: '#10B981' }]}>{newBalance} credits</Text>
+        <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>New Balance</Text>
+        <Text style={[styles.balanceValue, { color: '#10B981' }]}>{newBalance} tokens</Text>
       </View>
 
       {newBalance === 0 && (
-        <Text style={styles.warning}>⚠️ Yeh aapka last credit hoga</Text>
+        <Text style={styles.warning}>⚠️ Yeh aapka last token hoga</Text>
       )}
 
       <View style={styles.btnRow}>

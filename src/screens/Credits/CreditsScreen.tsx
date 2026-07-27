@@ -33,8 +33,8 @@ export default function CreditsScreen() {
     setPurchasePack(pack);
   };
 
-  const handlePaymentSuccess = () => {
-    setCreditsBalance(creditsBalance + purchasePack.credits);
+  const handlePaymentSuccess = (newBalance: number) => {
+    setCreditsBalance(newBalance);
     setPurchasePack(null);
   };
 
@@ -255,15 +255,15 @@ export default function CreditsScreen() {
 
 // ── Mock Data
 const PACKS = [
-  { id: '1', name: 'Starter Pack', credits: 10, rateText: '₹300 per credit', price: '₹3,000', saving: null, isPopular: false, rawPrice: 3000 },
-  { id: '2', name: 'Standard Pack', credits: 20, rateText: '₹280 per credit', price: '₹5,600', saving: 'Save ₹400', isPopular: true, rawPrice: 5600 },
-  { id: '3', name: 'Pro Pack', credits: 50, rateText: '₹250 per credit', price: '₹12,500', saving: 'Save ₹2,500', isPopular: false, rawPrice: 12500 },
+  { id: '1', tierId: 'CREDITS_10', name: 'Starter Pack', credits: 10, rateText: '₹300 per token', price: '₹3,000', saving: null, isPopular: false, rawPrice: 3000 },
+  { id: '2', tierId: 'CREDITS_20', name: 'Standard Pack', credits: 20, rateText: '₹280 per token', price: '₹5,600', saving: 'Save ₹400', isPopular: true, rawPrice: 5600 },
+  { id: '3', tierId: 'CREDITS_50', name: 'Pro Pack', credits: 50, rateText: '₹250 per token', price: '₹12,500', saving: 'Save ₹2,500', isPopular: false, rawPrice: 12500 },
 ];
 
 const TRANSACTIONS = [
-  { id: 't1', type: 'unlock', emoji: '🔓', iconBg: '#FEE2E2', title: 'Unlocked Contact', sub: '2BHK · Vijay Nagar', amount: '−1 credit', amountColor: '#EF4444', date: 'Aaj, 2:30 PM' },
-  { id: 't2', type: 'purchase', emoji: '✦', iconBg: '#D1FAE5', title: 'Credits Purchased', sub: 'Standard Pack · 20 credits', amount: '+20 credits', amountColor: '#10B981', date: 'Kal, 11:00 AM' },
-  { id: 't3', type: 'refund', emoji: '↩️', iconBg: '#FEF3C7', title: 'Credit Refund', sub: 'Listing deleted by owner', amount: '+1 credit', amountColor: '#F59E0B', date: '3 din pehle' },
+  { id: 't1', type: 'unlock', emoji: '🔓', iconBg: '#FEE2E2', title: 'Unlocked Contact', sub: '2BHK · Vijay Nagar', amount: '−1 token', amountColor: '#EF4444', date: 'Aaj, 2:30 PM' },
+  { id: 't2', type: 'purchase', emoji: '✦', iconBg: '#D1FAE5', title: 'Tokens Purchased', sub: 'Standard Pack · 20 tokens', amount: '+20 tokens', amountColor: '#10B981', date: 'Kal, 11:00 AM' },
+  { id: 't3', type: 'refund', emoji: '↩️', iconBg: '#FEF3C7', title: 'Token Refund', sub: 'Listing deleted by owner', amount: '+1 token', amountColor: '#F59E0B', date: '3 din pehle' },
 ];
 
 const styles = StyleSheet.create({

@@ -25,12 +25,14 @@ import { register } from '../../api/auth';
 
 // ── Validation ─────────────────────────────────────────────
 const registrationSchema = z.object({
-  name:   z.string().min(2, 'Name must be at least 2 characters'),
-  mobile: z.string().regex(/^[0-9]{10}$/, 'Must be a valid 10-digit mobile number'),
-  aadhaar: z.string().optional(),
-  pan:     z.string().optional(),
-  gst:     z.string().optional(),
-  rera:    z.string().optional(),
+  name:     z.string().min(2, 'Name must be at least 2 characters'),
+  mobile:   z.string().regex(/^[0-9]{10}$/, 'Must be a valid 10-digit mobile number'),
+  email:    z.string().email('Must be a valid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  aadhaar:  z.string().optional(),
+  pan:      z.string().optional(),
+  gst:      z.string().optional(),
+  rera:     z.string().optional(),
 }).superRefine((data, ctx) => {
   if (!data.aadhaar && !data.pan) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Either Aadhaar or PAN is required', path: ['aadhaar'] });
@@ -46,7 +48,7 @@ export default function RegistrationScreen() {
 
   const { control, handleSubmit, formState: { errors } } = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),
-    defaultValues: { name: '', mobile: '', aadhaar: '', pan: '', gst: '', rera: '' },
+    defaultValues: { name: '', mobile: '', email: '', password: '', aadhaar: '', pan: '', gst: '', rera: '' },
   });
 
   const [isLoading, setIsLoading] = React.useState(false);
@@ -57,6 +59,8 @@ export default function RegistrationScreen() {
       const payload = {
         name: data.name,
         mobile: data.mobile,
+        email: data.email,
+        password: data.password,
         aadharNumber: data.aadhaar,
         panCard: data.pan,
         gstNumber: data.gst,
@@ -64,8 +68,10 @@ export default function RegistrationScreen() {
       };
       
       const response = await register(payload);
-      Alert.alert('Success', response.message || 'Registration successful.');
-      navigation.navigate('Login');
+      Alert.alert('Success', response.message || 'Registration successful. OTP verification is pending.');
+      
+      // Navigate to OTP screen instead of Login
+      navigation.navigate('OTP', { email: data.email });
     } catch (error: any) {
       console.error('Registration Error:', error);
       Alert.alert('Registration Failed', error.response?.data?.message || 'Something went wrong. Please try again.');
@@ -162,6 +168,49 @@ export default function RegistrationScreen() {
                       onChangeText={onChange}
                       keyboardType="numeric"
                       maxLength={10}
+                      colors={colors}
+                      Brand={Brand}
+                    />
+                  )}
+                />
+              </Field>
+
+              {/* Email */}
+              <Field label="Email Address *" error={errors.email?.message} colors={colors}>
+                <Controller
+                  control={control}
+                  name="email"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <InputBox
+                      prefix="✉️"
+                      placeholder="e.g. user@example.com"
+                      hasError={!!errors.email}
+                      value={value}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      colors={colors}
+                      Brand={Brand}
+                    />
+                  )}
+                />
+              </Field>
+
+              {/* Password */}
+              <Field label="Password *" error={errors.password?.message} colors={colors}>
+                <Controller
+                  control={control}
+                  name="password"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <InputBox
+                      prefix="🔒"
+                      placeholder="Minimum 8 characters"
+                      hasError={!!errors.password}
+                      value={value}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      secureTextEntry
                       colors={colors}
                       Brand={Brand}
                     />
@@ -325,6 +374,7 @@ function InputBox({
   keyboardType,
   maxLength,
   autoCapitalize,
+  secureTextEntry,
   colors,
   Brand,
 }: {
@@ -337,6 +387,7 @@ function InputBox({
   keyboardType?: any;
   maxLength?: number;
   autoCapitalize?: any;
+  secureTextEntry?: boolean;
   colors: any;
   Brand: any;
 }) {
@@ -364,6 +415,7 @@ function InputBox({
         keyboardType={keyboardType}
         maxLength={maxLength}
         autoCapitalize={autoCapitalize ?? 'none'}
+        secureTextEntry={secureTextEntry}
       />
     </View>
   );

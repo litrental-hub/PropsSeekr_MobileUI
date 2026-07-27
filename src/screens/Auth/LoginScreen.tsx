@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,24 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
+import { login } from '../../api/auth';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
+import { checkBiometricSupport, hasSavedCredentials, getSavedCredentials, saveCredentials } from '../../utils/biometrics';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // ─────────────────────────────────────────────────────────────
 // LoginScreen
@@ -21,16 +31,59 @@ import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 export default function LoginScreen() {
   const setAuth = useAuthStore(s => s.setAuth);
   const navigation = useNavigation<any>();
-  const [phone, setPhone] = useState('');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [canBiometric, setCanBiometric] = useState(false);
+  const passwordInputRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
   
   const { colors, type, isDark } = useAppTheme();
 
-  const handleMockLogin = () => {
-    if (phone) {
-      navigation.navigate('OTP', { phone });
-    } else {
-      // Just navigate with empty phone if they didn't enter one
-      navigation.navigate('OTP', { phone: '9876543210' });
+  const handleLogin = async () => {
+    if (!identifier || !password) {
+      Alert.alert('Validation Error', 'Please enter both identifier and password.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const res = await login({ identifier, password });
+      
+      // Save token and user details to store
+      setAuth(
+        {
+          id: res.user.id,
+          name: res.user.name,
+          phone: res.user.mobileNumber,
+          email: res.user.email,
+          isAadhaarVerified: false,
+          isReraVerified: false,
+        },
+        res.token,
+        res.refreshToken
+      );
+      // NOTE: Navigation is typically handled automatically by the RootNavigator listening to auth state
+    } catch (error: any) {
+      const status = error.response?.status;
+      const data = error.response?.data;
+
+      console.error(`Login API Error [HTTP ${status || 'Unknown'}]:`, data || error.message);
+
+      let errorMessage = 'Something went wrong during login.';
+      if (data) {
+        if (typeof data === 'string') {
+          errorMessage = data;
+        } else if (typeof data === 'object') {
+          errorMessage = data.message || data.error || data.title || JSON.stringify(data);
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert(`Login Error ${status ? `(${status})` : ''}`, errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -54,85 +107,135 @@ export default function LoginScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <View style={styles.content}>
-
-          {/* ── Logo ── */}
-          <View style={styles.logoSection}>
-            <PropSeekrLogo size={88} theme={type} />
-
-            {/* FIND. MATCH. CLOSE. tagline */}
-            <View style={styles.taglineRow}>
-              <View style={styles.taglineLine} />
-              <Text style={styles.taglineFind}>FIND.</Text>
-              <Text style={styles.taglineMatch}> MATCH.</Text>
-              <Text style={styles.taglineClose}> CLOSE.</Text>
-              <View style={[styles.taglineLine, { backgroundColor: Brand.teal }]} />
-            </View>
-          </View>
-
-          {/* ── Headline ── */}
-          <View style={styles.headlineSection}>
-            <Text style={[styles.headline, { color: colors.textPrimary }]}>India's Smartest{'\n'}Broker Platform</Text>
-            <Text style={[styles.sub, { color: colors.textSecondary }]}>
-              Connect with other brokers, match properties &amp; requirements,{'\n'}and close deals faster.
-            </Text>
-          </View>
-
-          {/* ── Phone input ── */}
-          <View style={styles.inputSection}>
-            <View style={[styles.inputWrap, { borderColor: Brand.blueBorder }]}>
-              <LinearGradient
-                colors={type === 'dark' ? ['rgba(37,99,235,0.15)', 'rgba(16,185,129,0.08)'] : ['#FFFFFF', '#FFFFFF']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.inputInner}
-              >
-                <Text style={[styles.flagPrefix, { color: colors.textPrimary }]}>🇮🇳 +91</Text>
-                <View style={[styles.inputDivider, { backgroundColor: Brand.blueBorder }]} />
-                <TextInput
-                  style={[styles.phoneInput, { color: colors.textPrimary }]}
-                  placeholder="Enter your mobile number"
-                  placeholderTextColor={colors.textDim}
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  returnKeyType="done"
-                  onSubmitEditing={handleMockLogin}
-                />
-              </LinearGradient>
-            </View>
-
-            {/* CTA */}
-            <TouchableOpacity onPress={handleMockLogin} activeOpacity={0.85}>
-              <LinearGradient
-                colors={['#2563EB', '#1A8CD8', '#10B981']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.ctaBtn, { shadowColor: Brand.blue }]}
-              >
-                <Text style={styles.ctaBtnText}>Send OTP →</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <Text style={[styles.legal, { color: colors.textDim }]}>
-              By continuing, you agree to PropSeekr's{' '}
-              <Text style={styles.legalLink}>Terms &amp; Privacy Policy</Text>
-            </Text>
-          </View>
-
-          {/* ── Register link ── */}
-          <TouchableOpacity
-            style={styles.registerWrap}
-            onPress={() => navigation.navigate('Registration')}
-            activeOpacity={0.75}
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+        >
+          <ScrollView
+            ref={scrollViewRef}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
           >
-            <Text style={[styles.registerText, { color: colors.textSecondary }]}>
-              New here? <Text style={styles.registerLink}>Create an account</Text>
-            </Text>
-          </TouchableOpacity>
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+              <View style={styles.content}>
 
-        </View>
+                {/* ── Logo ── */}
+                <View style={styles.logoSection}>
+                  <PropSeekrLogo size={88} theme={type} />
+
+                  {/* FIND. MATCH. CLOSE. tagline */}
+                  <View style={styles.taglineRow}>
+                    <View style={styles.taglineLine} />
+                    <Text style={styles.taglineFind}>FIND.</Text>
+                    <Text style={styles.taglineMatch}> MATCH.</Text>
+                    <Text style={styles.taglineClose}> CLOSE.</Text>
+                    <View style={[styles.taglineLine, { backgroundColor: Brand.teal }]} />
+                  </View>
+                </View>
+
+                {/* ── Headline ── */}
+                <View style={styles.headlineSection}>
+                  <Text style={[styles.headline, { color: colors.textPrimary }]}>India's Smartest{'\n'}Broker Platform</Text>
+                  <Text style={[styles.sub, { color: colors.textSecondary }]}>
+                    Connect with other brokers, match properties &amp; requirements,{'\n'}and close deals faster.
+                  </Text>
+                </View>
+
+                {/* ── Inputs ── */}
+                <View style={styles.inputSection}>
+                  <View style={[styles.inputWrap, { borderColor: Brand.blueBorder }]}>
+                    <LinearGradient
+                      colors={type === 'dark' ? ['rgba(37,99,235,0.15)', 'rgba(16,185,129,0.08)'] : ['#FFFFFF', '#FFFFFF']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.inputInner}
+                    >
+                      <TextInput
+                        style={[styles.phoneInput, { color: colors.textPrimary }]}
+                        placeholder="Mobile Number or Email"
+                        placeholderTextColor={colors.textDim}
+                        value={identifier}
+                        onChangeText={setIdentifier}
+                        autoCapitalize="none"
+                        returnKeyType="next"
+                        blurOnSubmit={false}
+                        onFocus={() => {
+                          setTimeout(() => {
+                            scrollViewRef.current?.scrollTo({ y: 180, animated: true });
+                          }, 100);
+                        }}
+                        onSubmitEditing={() => passwordInputRef.current?.focus()}
+                      />
+                    </LinearGradient>
+                  </View>
+
+                  <View style={[styles.inputWrap, { borderColor: Brand.blueBorder }]}>
+                    <LinearGradient
+                      colors={type === 'dark' ? ['rgba(37,99,235,0.15)', 'rgba(16,185,129,0.08)'] : ['#FFFFFF', '#FFFFFF']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.inputInner}
+                    >
+                      <TextInput
+                        ref={passwordInputRef}
+                        style={[styles.phoneInput, { color: colors.textPrimary }]}
+                        placeholder="Password"
+                        placeholderTextColor={colors.textDim}
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry
+                        returnKeyType="done"
+                        onFocus={() => {
+                          setTimeout(() => {
+                            scrollViewRef.current?.scrollTo({ y: 220, animated: true });
+                          }, 100);
+                        }}
+                        onSubmitEditing={handleLogin}
+                      />
+                    </LinearGradient>
+                  </View>
+
+                  {/* CTA */}
+                  <TouchableOpacity onPress={handleLogin} activeOpacity={0.85} disabled={isLoading}>
+                    <LinearGradient
+                      colors={['#2563EB', '#1A8CD8', '#10B981']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[styles.ctaBtn, { shadowColor: Brand.blue }]}
+                    >
+                      {isLoading ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.ctaBtnText}>Login →</Text>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+
+                  <Text style={[styles.legal, { color: colors.textDim }]}>
+                    By continuing, you agree to PropSeekr's{' '}
+                    <Text style={styles.legalLink}>Terms &amp; Privacy Policy</Text>
+                  </Text>
+                </View>
+
+                {/* ── Register link ── */}
+                <TouchableOpacity
+                  style={styles.registerWrap}
+                  onPress={() => navigation.navigate('Registration')}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.registerText, { color: colors.textSecondary }]}>
+                    New here? <Text style={styles.registerLink}>Create an account</Text>
+                  </Text>
+                </TouchableOpacity>
+
+              </View>
+            </TouchableWithoutFeedback>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
@@ -143,13 +246,15 @@ export default function LoginScreen() {
 // ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  keyboardAvoid: { flex: 1 },
   safeArea: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
 
   accentBar: {
     height: 3, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
   },
 
-  content: { flex: 1, paddingHorizontal: 28, justifyContent: 'flex-start', paddingTop: 60 },
+  content: { flexGrow: 1, paddingHorizontal: 28, justifyContent: 'flex-start', paddingTop: 60 },
 
   // ── Logo
   logoSection: { alignItems: 'center', marginBottom: 12 },

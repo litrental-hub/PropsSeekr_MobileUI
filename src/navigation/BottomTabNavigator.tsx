@@ -2,6 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { FontSize, FontWeight } from '../constants/theme';
 import { useAppStore } from '../store/appStore';
@@ -9,14 +10,14 @@ import { useAppStore } from '../store/appStore';
 // Tab Screens
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
 import MatchesScreen from '../screens/Matches/MatchesScreen';
-import InventoryScreen from '../screens/Properties/InventoryScreen';
+import MyPropertiesScreen from '../screens/Properties/MyPropertiesScreen';
 import CreditsScreen from '../screens/Credits/CreditsScreen';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 
 export type BottomTabParamList = {
   Dashboard: undefined;
   Matches: undefined;
-  Inventory: undefined;
+  MyProperties: undefined;
   Credits: undefined;
   Profile: undefined;
 };
@@ -62,13 +63,24 @@ export default function BottomTabNavigator() {
   const unseenMatches = useAppStore(s => s.unseenMatches);
   const unreadNotifications = useAppStore(s => s.unreadNotifications);
   const creditsBalance = useAppStore(s => s.creditsBalance);
+  const insets = useSafeAreaInsets();
+
+  // Dynamically pad the bottom tab bar according to device OS system buttons (e.g. Samsung 3-button navbar or gestures)
+  const bottomInset = Math.max(insets.bottom, 12);
+  const tabBarHeight = 60 + bottomInset;
 
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: tabBarHeight,
+            paddingBottom: bottomInset,
+          },
+        ],
       }}>
       <Tab.Screen
         name="Dashboard"
@@ -89,11 +101,11 @@ export default function BottomTabNavigator() {
         }}
       />
       <Tab.Screen
-        name="Inventory"
-        component={InventoryScreen}
+        name="MyProperties"
+        component={MyPropertiesScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon iconName="office-building-outline" iconNameFocused="office-building" label="Inventory" focused={focused} />
+            <TabIcon iconName="office-building-outline" iconNameFocused="office-building" label="My Properties" focused={focused} />
           ),
         }}
       />
@@ -102,7 +114,7 @@ export default function BottomTabNavigator() {
         component={CreditsScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Credits" focused={focused} balance={creditsBalance} />
+            <TabIcon label="Tokens" focused={focused} balance={creditsBalance} />
           ),
         }}
       />
@@ -124,8 +136,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
-    height: 72,
-    paddingBottom: 8,
     paddingTop: 8,
   },
   tabItem: {

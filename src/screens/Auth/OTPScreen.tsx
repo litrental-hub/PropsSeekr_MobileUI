@@ -14,7 +14,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
-import { resendOTP } from '../../api/auth';
+import { sendEmailOTP, verifyEmailOTP } from '../../api/auth';
 import { useAuthStore } from '../../store/authStore';
 
 export default function OTPScreen() {
@@ -23,41 +23,42 @@ export default function OTPScreen() {
   const { colors, type } = useAppTheme();
   const setAuth = useAuthStore(s => s.setAuth);
   
-  // Accept phone number from previous screen, default to empty string
-  const phoneNumber = route.params?.phone || '';
+  // Accept email address from previous screen
+  const emailAddress = route.params?.email || route.params?.phone || '';
   
   const [otp, setOtp] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
 
-  const handleVerify = () => {
-    // Implement verify OTP logic here
-    // For now, let's just mock login if verified
-    setAuth(
-      {
-        id: '1',
-        name: 'Rahul Kumar',
-        phone: '+91 ' + phoneNumber,
-        agency: 'PropSeekr Realty',
-        isAadhaarVerified: true,
-        isReraVerified: false,
-        locality: 'Vijay Nagar, Indore',
-        ratingScore: 4.7,
-      },
-      'mock-access-token',
-      'mock-refresh-token',
-    );
+  const handleVerify = async () => {
+    if (!otp || otp.length < 6) {
+      Alert.alert('Validation Error', 'Please enter a valid 6-digit OTP.');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const response = await verifyEmailOTP({ email: emailAddress, otp, purpose: 'EmailVerification' });
+      
+      Alert.alert('Verified', response.message || 'Email verified successfully.');
+      navigation.navigate('Login');
+    } catch (error: any) {
+      console.error('Verify OTP Error:', error);
+      Alert.alert('Verification Failed', error.response?.data?.message || 'Invalid OTP.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleResendOTP = async () => {
-    if (!phoneNumber) {
-      Alert.alert('Error', 'Mobile number is missing.');
+    if (!emailAddress) {
+      Alert.alert('Error', 'Email address is missing.');
       return;
     }
 
     try {
       setIsResending(true);
-      const response = await resendOTP({ mobileNumber: phoneNumber });
+      const response = await sendEmailOTP({ email: emailAddress, purpose: 'EmailVerification' });
       Alert.alert('OTP Resent', response.message || 'OTP has been resent successfully.');
     } catch (error: any) {
       console.error('Resend OTP Error:', error);
@@ -101,8 +102,8 @@ export default function OTPScreen() {
           <View style={styles.headlineSection}>
             <Text style={[styles.headline, { color: colors.textPrimary }]}>Verify OTP</Text>
             <Text style={[styles.sub, { color: colors.textSecondary }]}>
-              Enter the 4-digit code sent to{'\n'}
-              <Text style={{ fontWeight: 'bold', color: colors.textPrimary }}>+91 {phoneNumber || 'your number'}</Text>
+              Enter the code sent to{'\n'}
+              <Text style={{ fontWeight: 'bold', color: colors.textPrimary }}>{emailAddress || 'your email'}</Text>
             </Text>
           </View>
 
@@ -111,12 +112,12 @@ export default function OTPScreen() {
             <View style={[styles.inputWrap, { borderColor: Brand.blueBorder, backgroundColor: colors.inputBg }]}>
               <TextInput
                 style={[styles.otpInput, { color: colors.textPrimary }]}
-                placeholder="• • • •"
+                placeholder="• • • • • •"
                 placeholderTextColor={colors.textDim}
                 value={otp}
                 onChangeText={setOtp}
                 keyboardType="number-pad"
-                maxLength={4}
+                maxLength={6}
                 textAlign="center"
               />
             </View>

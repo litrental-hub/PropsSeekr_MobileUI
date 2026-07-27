@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { enableScreens } from 'react-native-screens';
@@ -10,6 +11,8 @@ enableScreens(true);
 import LoginScreen from '../screens/Auth/LoginScreen';
 import OTPScreen from '../screens/Auth/OTPScreen';
 import RegistrationScreen from '../screens/Auth/RegistrationScreen';
+import PinSetupScreen from '../screens/Auth/PinSetupScreen';
+import LockScreen from '../screens/Auth/LockScreen';
 
 import { Colors } from '../constants/colors';
 
@@ -23,15 +26,16 @@ import PropertyDetailScreen from '../screens/Properties/PropertyDetailScreen';
 import RequirementDetailScreen from '../screens/Requirements/RequirementDetailScreen';
 import MatchDetailScreen from '../screens/Matches/MatchDetailScreen';
 import SearchScreen from '../screens/Search/SearchScreen';
-import BuyCreditsScreen from '../screens/Credits/BuyCreditsScreen';
 import NotificationsScreen from '../screens/Profile/NotificationsScreen';
 import SettingsScreen from '../screens/Profile/SettingsScreen';
 
 export type RootStackParamList = {
   // Auth
   Login: undefined;
-  OTP: { phone: string };
+  OTP: { email: string };
   Registration: undefined;
+  PinSetup: undefined;
+  LockScreen: undefined;
 
   // Main
   MainTabs: undefined;
@@ -43,7 +47,6 @@ export type RootStackParamList = {
   RequirementDetail: { requirementId: string };
   MatchDetail: { matchId: string };
   Search: { initialFilter?: string };
-  BuyCredits: undefined;
   Notifications: undefined;
   Settings: undefined;
 };
@@ -52,20 +55,44 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const isLocked = useAuthStore(s => s.isLocked);
+  const appPin = useAuthStore(s => s.appPin);
+  const setIsLocked = useAuthStore(s => s.setIsLocked);
+
+  // Background security listener
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      // If the app goes to background and we are authenticated and have a PIN, lock it!
+      if (nextAppState.match(/inactive|background/) && isAuthenticated && appPin) {
+        setIsLocked(true);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isAuthenticated, appPin, setIsLocked]);
 
   return (
     <NavigationContainer>
       <Stack.Navigator
         screenOptions={{ headerShown: false, contentStyle: { backgroundColor: Colors.surfaceDark } }}>
+        
         {!isAuthenticated ? (
-          // Auth flow
+          // Unauthenticated flow
           <Stack.Group>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="OTP" component={OTPScreen} />
             <Stack.Screen name="Registration" component={RegistrationScreen} />
           </Stack.Group>
+        ) : isLocked ? (
+          // Gatekeeper: App is locked
+          <Stack.Screen name="LockScreen" component={LockScreen} options={{ animation: 'fade' }} />
+        ) : !appPin ? (
+          // User authenticated but hasn't set up PIN yet
+          <Stack.Screen name="PinSetup" component={PinSetupScreen} options={{ animation: 'fade' }} />
         ) : (
-          // App flow
+          // Main App flow
           <>
             <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
             <Stack.Screen
@@ -85,11 +112,6 @@ export default function RootNavigator() {
               name="Search"
               component={SearchScreen}
               options={{ animation: 'fade_from_bottom' }}
-            />
-            <Stack.Screen
-              name="BuyCredits"
-              component={BuyCreditsScreen}
-              options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
             />
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />

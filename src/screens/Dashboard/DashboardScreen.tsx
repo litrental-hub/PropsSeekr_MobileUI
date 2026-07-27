@@ -19,6 +19,7 @@ import { useAuthStore } from '../../store/authStore';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
+import { BottomSheet } from '../../components/BottomSheet';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -74,6 +75,7 @@ export default function DashboardScreen() {
 
   const [selectedBHK, setSelectedBHK] = useState('Sab');
   const [activeTab, setActiveTab] = useState<'Available' | 'Looking'>('Available');
+  const [isFilterVisible, setIsFilterVisible] = useState(false);
 
   const isRental = sectionType === 'Rentals';
   const tabCounts = isRental
@@ -182,7 +184,11 @@ export default function DashboardScreen() {
                 editable={false}
               />
             </View>
-            <TouchableOpacity style={styles.filterBtn} activeOpacity={0.85}>
+            <TouchableOpacity 
+              style={styles.filterBtn} 
+              activeOpacity={0.85}
+              onPress={() => setIsFilterVisible(true)}
+            >
               <LinearGradient
                 colors={[Brand.blue, Brand.teal]}
                 start={{ x: 0, y: 0 }}
@@ -190,43 +196,12 @@ export default function DashboardScreen() {
                 style={styles.filterGrad}
               >
                 <Text style={styles.filterIcon}>☰</Text>
-                <Text style={styles.filterText}>Filter</Text>
+                <Text style={styles.filterText}>
+                  {selectedBHK !== 'Sab' ? selectedBHK : 'Filter'}
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
-
-          {/* ── BHK Chips ── */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.bhkRow}
-          >
-            {BHK_FILTERS.map(f => {
-              const active = selectedBHK === f;
-              return (
-                <TouchableOpacity
-                  key={f}
-                  onPress={() => setSelectedBHK(f)}
-                  activeOpacity={0.75}
-                >
-                  {active ? (
-                    <LinearGradient
-                      colors={[Brand.blue, Brand.teal]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.bhkChipActive}
-                    >
-                      <Text style={[styles.bhkChipTextActive, { color: '#FFFFFF' }]}>{f}</Text>
-                    </LinearGradient>
-                  ) : (
-                    <View style={[styles.bhkChip, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
-                      <Text style={[styles.bhkChipText, { color: colors.textSecondary }]}>{f}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
 
           {/* ── Tabs: Available / Looking ── */}
           <View style={[styles.tabsRow, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}>
@@ -267,17 +242,8 @@ export default function DashboardScreen() {
           {/* ── Property Card ── */}
           <PropertyCard property={MOCK_PROPERTY} isRental={isRental} theme={theme} />
 
-          {/* ── Active Requirements ── */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>ACTIVE REQUIREMENTS</Text>
-            <TouchableOpacity activeOpacity={0.7}>
-              <Text style={styles.seeAllBtn}>Client dhoondh raha hai →</Text>
-            </TouchableOpacity>
-          </View>
 
-          {MOCK_REQUIREMENTS.map(req => (
-            <RequirementRow key={req.id} item={req} theme={theme} />
-          ))}
+          <View style={styles.footerSpacing} />
         </ScrollView>
 
         {/* ── FAB (+ button) ── */}
@@ -291,6 +257,43 @@ export default function DashboardScreen() {
             <Text style={styles.fabIcon}>+</Text>
           </LinearGradient>
         </TouchableOpacity>
+
+        <BottomSheet visible={isFilterVisible} onClose={() => setIsFilterVisible(false)}>
+          <View style={styles.filterSheetContent}>
+            <Text style={[styles.filterSheetTitle, { color: colors.textPrimary }]}>Property Type</Text>
+            <View style={styles.filterSheetOptions}>
+              {BHK_FILTERS.map(f => {
+                const active = selectedBHK === f;
+                return (
+                  <TouchableOpacity
+                    key={f}
+                    onPress={() => {
+                      setSelectedBHK(f);
+                      setIsFilterVisible(false);
+                    }}
+                    activeOpacity={0.75}
+                    style={styles.filterSheetOptionBtn}
+                  >
+                    {active ? (
+                      <LinearGradient
+                        colors={[Brand.blue, Brand.teal]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.bhkChipActive}
+                      >
+                        <Text style={[styles.bhkChipTextActive, { color: '#FFFFFF' }]}>{f}</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={[styles.bhkChip, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+                        <Text style={[styles.bhkChipText, { color: colors.textSecondary }]}>{f}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </BottomSheet>
       </SafeAreaView>
     </View>
   );
@@ -640,4 +643,24 @@ const styles = StyleSheet.create({
   },
   fabGrad:  { width: 54, height: 54, alignItems: 'center', justifyContent: 'center', borderRadius: 28 },
   fabIcon:  { fontSize: 26, color: Brand.white, fontWeight: '700', lineHeight: 30 },
+
+  // Filter BottomSheet styles
+  filterSheetContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
+  filterSheetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 16,
+  },
+  filterSheetOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  filterSheetOptionBtn: {
+    marginBottom: 4,
+  },
 });

@@ -69,7 +69,7 @@ export function ContactRevealedModal({ visible, onClose }: ContactRevealedModalP
           <Text style={styles.waBtnText}>💬 WhatsApp Karo</Text>
         </TouchableOpacity>
 
-        <Text style={styles.footerText}>1 credit spent · 7 credits remaining</Text>
+        <Text style={styles.footerText}>1 token spent · 7 tokens remaining</Text>
 
         <TouchableOpacity onPress={onClose} style={styles.backLink}>
           <Text style={styles.backLinkText}>Listing pe wapas jao →</Text>
