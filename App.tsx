@@ -1,11 +1,22 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { StatusBar, View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { StatusBar, View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import RootNavigator from './src/navigation/RootNavigator';
 import { Colors } from './src/constants/colors';
 import './src/i18n'; // Import i18n setup
+
+// Enforce global Inter font family consistency across all Text and TextInput elements in the application
+const defaultFontFamily = Platform.OS === 'ios' ? 'Inter' : 'Inter-Regular';
+
+const customTextProps = (Text as any).defaultProps || {};
+customTextProps.style = [{ fontFamily: defaultFontFamily }, customTextProps.style];
+(Text as any).defaultProps = customTextProps;
+
+const customTextInputProps = (TextInput as any).defaultProps || {};
+customTextInputProps.style = [{ fontFamily: defaultFontFamily }, customTextInputProps.style];
+(TextInput as any).defaultProps = customTextInputProps;
 
 const queryClient = new QueryClient({
   defaultOptions: {

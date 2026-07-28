@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { BottomSheet } from '../../components/BottomSheet';
+import { detectCurrentLocation, requestLocationPermissions } from '../../utils/location';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -67,11 +68,27 @@ const MOCK_REQUIREMENTS = [
 // ── Main Screen ──────────────────────────────────────────────
 export default function DashboardScreen() {
   const navigation = useNavigation<Nav>();
-  const { creditsBalance, sectionType, setSectionType } = useAppStore();
+  const { creditsBalance, sectionType, setSectionType, location, setLocation } = useAppStore();
   const user = useAuthStore(s => s.user);
   
   const theme = useAppTheme();
   const { colors, type, isDark } = theme;
+
+  useEffect(() => {
+    // Automatically detect GPS location and geocode city/locality on boot/login
+    (async () => {
+      const detected = await detectCurrentLocation(location.radiusKm || 5);
+      if (detected) {
+        setLocation(detected);
+      }
+    })();
+  }, []);
+
+  const handleChangeLocation = () => {
+    // Request permissions in parallel without blocking screen navigation
+    requestLocationPermissions();
+    navigation.navigate('Search' as any);
+  };
 
   const [selectedBHK, setSelectedBHK] = useState('Sab');
   const [activeTab, setActiveTab] = useState<'Available' | 'Looking'>('Available');
@@ -154,20 +171,22 @@ export default function DashboardScreen() {
         </View>
 
         {/* ── Location Bar ── */}
-        <View style={[styles.locationBar, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}>
+        <TouchableOpacity 
+          activeOpacity={0.8} 
+          onPress={handleChangeLocation} 
+          style={[styles.locationBar, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}
+        >
           <View style={styles.locationLeft}>
             <Text style={styles.locationPin}>📍</Text>
             <View>
-              <Text style={[styles.locationName, { color: colors.textPrimary }]}>Vijay Nagar, Indore</Text>
+              <Text style={[styles.locationName, { color: colors.textPrimary }]}>{location.locality}, {location.city}</Text>
               <Text style={[styles.locationSub, { color: colors.textDim }]}>
-                5 km radius · {isRental ? '127 rental' : '228 buy/sell'} listings
+                {location.radiusKm} km radius · {isRental ? '127 rental' : '228 buy/sell'} listings
               </Text>
             </View>
           </View>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text style={styles.changeBtn}>Change →</Text>
-          </TouchableOpacity>
-        </View>
+          <Text style={styles.changeBtn}>Change →</Text>
+        </TouchableOpacity>
 
         <ScrollView
           showsVerticalScrollIndicator={false}

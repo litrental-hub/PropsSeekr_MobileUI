@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 export const Spacing = {
   xs:  4,
   sm:  8,
@@ -14,6 +16,13 @@ export const Radius = {
   lg:   18,
   xl:   24,
   full: 9999,
+};
+
+export const FontFamily = {
+  regular:  Platform.OS === 'ios' ? 'Inter' : 'Inter-Regular',
+  medium:   Platform.OS === 'ios' ? 'Inter' : 'Inter-Medium',
+  semibold: Platform.OS === 'ios' ? 'Inter' : 'Inter-SemiBold',
+  bold:     Platform.OS === 'ios' ? 'Inter' : 'Inter-Bold',
 };
 
 export const FontSize = {

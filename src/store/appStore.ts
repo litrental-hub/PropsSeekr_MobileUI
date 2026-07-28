@@ -4,6 +4,14 @@ import { storage } from '../utils/storage';
 
 export type ThemeType = 'dark' | 'light';
 
+export interface LocationState {
+  city: string;
+  locality: string;
+  lat: number;
+  lng: number;
+  radiusKm: number;
+}
+
 interface AppState {
   theme: ThemeType;
   toggleTheme: () => void;
@@ -23,10 +31,13 @@ interface AppState {
 
   creditsBalance: number;
   setCreditsBalance: (balance: number) => void;
+
+  location: LocationState;
+  setLocation: (location: LocationState) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  theme: (storage.getString('theme') as ThemeType) ?? 'dark',
+  theme: (storage.getString('theme') as ThemeType) ?? 'light',
   toggleTheme: () => {
     const newTheme = get().theme === 'dark' ? 'light' : 'dark';
     storage.set('theme', newTheme);
@@ -54,4 +65,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   creditsBalance: 0,
   setCreditsBalance: balance => set({ creditsBalance: balance }),
+
+  location: (() => {
+    const saved = storage.getString('active_location');
+    if (saved) {
+      try {
+        return JSON.parse(saved) as LocationState;
+      } catch {
+        // Fallback if parsing fails
+      }
+    }
+    return {
+      city: 'Indore',
+      locality: 'Vijay Nagar',
+      lat: 22.7533,
+      lng: 75.8937,
+      radiusKm: 5,
+    };
+  })(),
+  setLocation: location => {
+    storage.set('active_location', JSON.stringify(location));
+    set({ location });
+  },
 }));
