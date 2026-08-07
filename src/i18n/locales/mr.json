@@ -16,7 +16,20 @@
   },
   "dashboard": {
     "welcome": "परत स्वागत आहे",
-    "matches": "जुळण्या"
+    "matches": "जुळण्या",
+    "rental": "भाड्याने",
+    "buySell": "खरेदी/विक्री",
+    "change": "बदला →",
+    "searchPlaceholder": "परिसर, मालमत्ता प्रकार, बजेट...",
+    "filter": "फिल्टर",
+    "available": "उपलब्ध",
+    "looking": "शोधा",
+    "nearby": "तुमच्या आसपास",
+    "noMatches": "साठी कोणतीही मालमत्ता सापडली नाही",
+    "addProperty": "मालमत्ता जोडा",
+    "addRequirement": "आवश्यकता जोडा",
+    "uploadFile": "फाईल अपलोड करा",
+    "quickActions": "द्रुत क्रिया"
   },
   "addProperty": {
     "newListing": "नवीन लिस्टिंग",
@@ -97,6 +110,73 @@
     "gst": "जीएसटी (18%)",
     "total": "एकूण",
     "payBtn": "₹{{amount}} भरा →",
-    "securedBy": "रेझरपे द्वारे सुरक्षित"
+    "securedBy": "रेझरपे द्वारे सुरक्षित",
+    "unlockDemo": "संपर्क अनलॉक करा (डेमो)",
+    "unlockDemoSub": "नमुना ब्रोकर नंबर अनलॉक करून पहा",
+    "historyModalTitle": "टोकन वापर इतिहास",
+    "close": "बंद करा"
+  },
+  "unlock": {
+    "title": "संपर्क अनलॉक करा",
+    "costValue": "1 टोकन",
+    "costLabel": "संपर्क तपशील अनलॉक करण्यासाठी",
+    "yourBalance": "तुमची शिल्लक:",
+    "newBalance": "नवीन शिल्लक",
+    "tokens": "टोकन",
+    "lastTokenWarning": "⚠️ हे तुमचे शेवटचे टोकन असेल",
+    "cancel": "रद्द करा",
+    "confirmBtn": "आत्ता अनलॉक करा 🔓",
+    "successTitle": "संपर्क अनलॉक झाला!",
+    "successSub": "आता तुम्ही थेट संवाद साधू शकता",
+    "role": "मालमत्ता मालक",
+    "waAvailable": "व्हॉट्सअ‍ॅप उपलब्ध",
+    "callNow": "📞 आता कॉल करा",
+    "waBtn": "💬 व्हॉट्सअ‍ॅप करा",
+    "footerText": "1 टोकन खर्च · {{remaining}} टोकन शिल्लक आहेत",
+    "backLink": "लिस्टिंगवर परत जा →"
+  },
+  "matchesScreen": {
+    "noMatchesYet": "अद्याप एकही जुळणी नाही",
+    "loadingMore": "आणखी लोड करत आहे…",
+    "retry": "पुन्हा प्रयत्न करा",
+    "matchesCount": "जुळण्या",
+    "score": "स्कोर",
+    "property": "मालमत्ता ब्रोकर",
+    "buyer": "आवश्यकता ब्रोकर",
+    "notifSent": "सूचित केले",
+    "pendingApproval": "मंजुरी प्रलंबित",
+    "acceptAndUnlock": "स्वीकारा आणि अनलॉक करा",
+    "unlockContact": "संपर्क अनलॉक करा",
+    "unlocked": "संपर्क अनलॉक केला",
+    "moreDetails": "अधिक तपशील"
+  },
+  "myProperties": {
+    "title": "माझ्या मालमत्ता",
+    "addPropertyBtn": "+ मालमत्ता",
+    "addRequirementBtn": "+ आवश्यकता",
+    "views": "वेळा पाहिले",
+    "matches": "जुळण्या",
+    "edit": "संपादित करा",
+    "clientReq": "क्लाइंटची आवश्यकता",
+    "budget": "बजेट:",
+    "noProperties": "अद्याप कोणतीही मालमत्ता जोडली नाही.",
+    "noRequirements": "अद्याप कोणतीही आवश्यकता जोडली नाही."
+  },
+  "searchScreen": {
+    "selectLocation": "नकाशावर स्थान निवडा",
+    "searchGo": "शोधा",
+    "locateMe": "माझे स्थान",
+    "radiusLabel": "शोध त्रिज्या (KM)",
+    "confirmBtn": "स्थान आणि त्रिज्या निश्चित करा →"
+  },
+  "loginScreen": {
+    "taglineFind": "शोधा.",
+    "taglineMatch": " जुळवा.",
+    "taglineClose": " सौदा पूर्ण करा.",
+    "headline": "भारतातील सर्वात स्मार्ट\nब्रोकर प्लॅटफॉर्म",
+    "loginBtn": "लॉगिन करा →",
+    "terms": "अटी आणि गोपनीयता धोरण",
+    "newHere": "नवीन आहात?",
+    "createAccount": "खाते तयार करा"
   }
 }

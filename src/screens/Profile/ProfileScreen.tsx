@@ -10,7 +10,11 @@ import {
   Platform,
   StatusBar,
   Image,
+  Alert,
+  ActivityIndicator,
+  PermissionsAndroid,
 } from 'react-native';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { useForm, Controller } from 'react-hook-form';
@@ -21,9 +25,11 @@ import { useAuthStore } from '../../store/authStore';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { getProfile, updateProfile, uploadProfilePhoto } from '../../api/profile';
 
 // ── Validation ─────────────────────────────────────────────
 const profileSchema = z.object({
+  name: z.string().min(2, 'Name is required'),
   companyName: z.string().min(2, 'Company name is required'),
   companyGst: z.string().optional(),
   companyAddress: z.string().min(5, 'Address is too short'),
@@ -39,21 +45,166 @@ export default function ProfileScreen() {
   const navigation = useNavigation<any>();
 
   // Local state for photo just to show UI interaction
+  const [photoUrl, setPhotoUrl] = useState<string>('/uploads/profile-photos/default-avatar.png');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const { control, handleSubmit, formState: { errors, isDirty } } = useForm<ProfileFormData>({
+  const { control, handleSubmit, reset, formState: { errors, isDirty } } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
+      name: 'Balaji G. Test',
       companyName: 'PropSeekr Realty',
       companyGst: '23ABCDE1234F1Z5',
       companyAddress: 'Vijay Nagar, Indore, MP',
-      email: 'broker@propseekr.in',
+      email: 'balaji.updated@example.com',
     },
   });
 
-  const onSubmit = (data: ProfileFormData) => {
-    console.log('Saved Profile Data:', data);
-    // TODO: Call API to save profile updates
+  React.useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setLoading(true);
+        const profile = await getProfile();
+        if (profile) {
+          reset({
+            name: profile.name || profile.fullName || 'Balaji G. Test',
+            companyName: profile.companyName || (profile as any).agencyName || 'PropSeekr Realty',
+            companyGst: profile.companyGst || (profile as any).gstNumber || '',
+            companyAddress: profile.companyAddress || (profile as any).officeAddress || '',
+            email: profile.email || 'balaji.updated@example.com',
+          });
+          if (profile.profilePhotoUrl || (profile as any).avatarUrl) {
+            const url = profile.profilePhotoUrl || (profile as any).avatarUrl;
+            setPhotoUrl(url);
+            if (url && url !== '/uploads/profile-photos/default-avatar.png') {
+              setPhotoUri(url);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch profile:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUserData();
+  }, [reset]);
+
+  const onSubmit = async (data: ProfileFormData) => {
+    try {
+      setSaving(true);
+      await updateProfile({
+        name: data.name,
+        fullName: data.name,
+        email: data.email,
+        profilePhotoUrl: photoUrl || '/uploads/profile-photos/default-avatar.png',
+        companyName: data.companyName,
+        agencyName: data.companyName,
+        companyGst: data.companyGst,
+        gstNumber: data.companyGst,
+        companyAddress: data.companyAddress,
+        officeAddress: data.companyAddress,
+      });
+      Alert.alert('Success', 'Profile updated successfully.');
+    } catch (error: any) {
+      console.error('Failed to update profile:', error);
+      const msg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Failed to update profile.';
+      Alert.alert('Error', msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const processAndUploadPhoto = async (uri: string, fileName: string, fileType: string) => {
+    setPhotoUri(uri);
+    try {
+      setSaving(true);
+      const res = await uploadProfilePhoto(uri, fileName, fileType);
+      const newUrl = res?.profilePhotoUrl || res?.url || (res as any)?.data?.profilePhotoUrl || (res as any)?.data?.url || uri;
+      setPhotoUrl(newUrl);
+
+      // Save updated photo to profile
+      const currentValues = control._formValues;
+      await updateProfile({
+        name: currentValues.name || 'User',
+        email: currentValues.email || '',
+        profilePhotoUrl: newUrl,
+        companyName: currentValues.companyName || '',
+        agencyName: currentValues.companyName || '',
+      });
+      Alert.alert('Success', 'Profile photo updated successfully!');
+    } catch (err: any) {
+      console.log('Upload error:', err?.message, err?.response?.data);
+      setPhotoUrl(uri);
+      Alert.alert('Notice', 'Photo updated locally! Tap "Save Profile" to save all profile changes.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePhotoChange = () => {
+    Alert.alert(
+      'Update Profile Photo',
+      'Select an option to pick a photo:',
+      [
+        {
+          text: 'Take Photo (Camera)',
+          onPress: async () => {
+            try {
+              if (Platform.OS === 'android') {
+                const granted = await PermissionsAndroid.request(
+                  PermissionsAndroid.PERMISSIONS.CAMERA,
+                  {
+                    title: 'Camera Permission',
+                    message: 'PropSeekr needs access to your camera to capture a profile avatar.',
+                    buttonNeutral: 'Ask Me Later',
+                    buttonNegative: 'Cancel',
+                    buttonPositive: 'OK',
+                  }
+                );
+                if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+                  Alert.alert('Permission Denied', 'Camera permission is required to take a photo.');
+                  return;
+                }
+              }
+              const res = await launchCamera({ mediaType: 'photo', quality: 0.8, cameraType: 'front', saveToPhotos: false });
+              if (res.didCancel || res.errorCode || !res.assets || res.assets.length === 0) {
+                if (res.errorMessage) Alert.alert('Error', res.errorMessage);
+                return;
+              }
+              const asset = res.assets[0];
+              if (asset.uri) {
+                await processAndUploadPhoto(asset.uri, asset.fileName || 'profile_photo.jpg', asset.type || 'image/jpeg');
+              }
+            } catch (err: any) {
+              console.log('Camera error:', err?.message);
+              Alert.alert('Error', 'Could not launch camera: ' + (err?.message || 'Unknown error'));
+            }
+          },
+        },
+        {
+          text: 'Choose from Gallery',
+          onPress: async () => {
+            try {
+              const res = await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
+              if (res.didCancel || res.errorCode || !res.assets || res.assets.length === 0) {
+                if (res.errorMessage) Alert.alert('Error', res.errorMessage);
+                return;
+              }
+              const asset = res.assets[0];
+              if (asset.uri) {
+                await processAndUploadPhoto(asset.uri, asset.fileName || 'profile_photo.jpg', asset.type || 'image/jpeg');
+              }
+            } catch (err: any) {
+              console.log('Gallery error:', err?.message);
+              Alert.alert('Error', 'Could not open gallery: ' + (err?.message || 'Unknown error'));
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   };
 
   return (
@@ -107,7 +258,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity 
                   style={styles.editPhotoBadge} 
                   activeOpacity={0.8}
-                  onPress={() => console.log('Open image picker')}
+                  onPress={handlePhotoChange}
                 >
                   <Text style={{ fontSize: 12 }}>📷</Text>
                 </TouchableOpacity>
@@ -116,6 +267,26 @@ export default function ProfileScreen() {
 
             {/* Form */}
             <View style={styles.form}>
+              {/* Broker Name */}
+              <Field label="Broker Name *" error={errors.name?.message} colors={colors}>
+                <Controller
+                  control={control}
+                  name="name"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <InputBox
+                      prefix="👤"
+                      placeholder="e.g. Balaji G. Test"
+                      hasError={!!errors.name}
+                      value={value}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      colors={colors}
+                      Brand={Brand}
+                    />
+                  )}
+                />
+              </Field>
+
               {/* Email */}
               <Field label={t('profile.emailAddress')} error={errors.email?.message} colors={colors}>
                 <Controller
@@ -201,15 +372,19 @@ export default function ProfileScreen() {
               </Field>
 
               {/* Save Button */}
-              <TouchableOpacity onPress={handleSubmit(onSubmit)} activeOpacity={0.85} style={{ marginTop: 24 }}>
+              <TouchableOpacity onPress={handleSubmit(onSubmit)} activeOpacity={0.85} style={{ marginTop: 24 }} disabled={saving || loading}>
                 <LinearGradient
                   colors={[Brand.blue, '#1A8CD8', Brand.teal]}
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                   style={[styles.ctaBtn, { shadowColor: Brand.blue }]}
                 >
-                  <Text style={styles.ctaBtnText}>
-                    {isDirty ? t('profile.saveChanges') : t('profile.saved')}
-                  </Text>
+                  {saving ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.ctaBtnText}>
+                      {isDirty ? t('profile.saveChanges') : t('profile.saved')}
+                    </Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 

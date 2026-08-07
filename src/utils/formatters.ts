@@ -1,25 +1,62 @@
 /**
- * Format a number to Indian price notation
+ * Helper to format raw numeric values into L/Cr notation
+ */
+const formatNumberValue = (val: number): string => {
+  if (isNaN(val)) return '0';
+  if (val >= 10000000) return `${(val / 10000000).toFixed(2).replace(/\.?0+$/, '')}Cr`;
+  if (val >= 100000) return `${(val / 100000).toFixed(1).replace(/\.0$/, '')}L`;
+  if (val >= 1000) return `${(val / 1000).toFixed(0)}K`;
+  return String(val.toLocaleString('en-IN'));
+};
+
+/**
+ * Format price/budget (including JS objects like { min, max, displayValue, currency }) to readable strings
  * 1400000 → "₹14L"  |  10500000 → "₹1.05Cr"
  */
-export const formatPrice = (value: number): string => {
-  if (value >= 10000000) {
-    return `₹${(value / 10000000).toFixed(2).replace(/\.?0+$/, '')}Cr`;
+export const formatPrice = (value: any): string => {
+  if (value === null || value === undefined || value === '') return 'N/A';
+
+  if (typeof value === 'object') {
+    const curr = value.currency ? (value.currency === 'INR' || value.currency === 'INR ' ? '₹' : `${value.currency.trim()} `) : '₹';
+    if (value.displayValue) {
+      const disp = String(value.displayValue);
+      return disp.startsWith('₹') || disp.startsWith(curr.trim()) ? disp : `${curr}${disp}`;
+    }
+    if (value.min !== undefined && value.max !== undefined) {
+      return `${curr}${formatNumberValue(Number(value.min))} – ${formatNumberValue(Number(value.max))}`;
+    }
+    if (value.min !== undefined) return `${curr}${formatNumberValue(Number(value.min))}+`;
+    if (value.max !== undefined) return `Up to ${curr}${formatNumberValue(Number(value.max))}`;
+    // Fallback to avoid raw JavaScript objects causing React Native Text crash
+    return JSON.stringify(value);
   }
-  if (value >= 100000) {
-    return `₹${(value / 100000).toFixed(1).replace(/\.0$/, '')}L`;
+
+  if (typeof value === 'string') {
+    if (value.trim().startsWith('₹') || isNaN(Number(value))) return value;
+    return `₹${formatNumberValue(Number(value))}`;
   }
-  if (value >= 1000) {
-    return `₹${(value / 1000).toFixed(0)}K`;
+
+  if (typeof value === 'number') {
+    return `₹${formatNumberValue(value)}`;
   }
-  return `₹${value}`;
+
+  return String(value);
 };
 
 /**
  * Format rent: 14000 → "₹14,000/mo"
  */
-export const formatRent = (value: number): string =>
-  `₹${value.toLocaleString('en-IN')}/mo`;
+export const formatRent = (value: any): string => {
+  if (value === null || value === undefined) return 'N/A';
+  if (typeof value === 'object') {
+    const formatted = formatPrice(value);
+    return formatted.endsWith('/mo') ? formatted : `${formatted}/mo`;
+  }
+  if (typeof value === 'string' && isNaN(Number(value))) {
+    return value.endsWith('/mo') ? value : `${value}/mo`;
+  }
+  return `₹${Number(value || 0).toLocaleString('en-IN')}/mo`;
+};
 
 /**
  * Relative time: "2 days ago", "just now"

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,19 +16,18 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import axios from 'axios';
-
+import { addRequirement } from '../../api/requirements';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAuthStore } from '../../store/authStore';
 import { PROPERTY_TYPES, BHK_OPTIONS } from '../../constants';
+import Geolocation from '@react-native-community/geolocation';
+import { requestLocationPermissions } from '../../utils/location';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const REQUIREMENT_ENDPOINT =
-  'https://73t761f5q5.execute-api.ap-south-1.amazonaws.com/default/propseekr-file-processor/listing';
 
 const SIZE_UNITS: { label: string; value: string }[] = [
   { label: 'Sq Ft (Square Feet)', value: 'Sq Ft' },
@@ -156,6 +155,61 @@ export default function AddRequirementScreen() {
   const [projectName, setProjectName] = useState('');
   const [description, setDescription] = useState('');
 
+  const route = useRoute<any>();
+  const editData = route.params?.initialData;
+
+  useEffect(() => {
+    if (editData) {
+      if (editData.locality || editData.location || editData.city) {
+        let loc = (editData.locality || editData.location || editData.city || '').toString();
+        // Clean up location if it contains bullets like " · 5 km radius"
+        loc = loc.split('·')[0].trim();
+        setLocation(loc);
+      }
+      if (editData.propertyType || editData.category) {
+        setPropertyType(editData.propertyType || editData.category || 'Flat / Apartment');
+      } else if (editData.lookingFor || editData.description) {
+        const text = (editData.lookingFor || editData.description || '').toLowerCase();
+        if (text.includes('flat') || text.includes('apartment') || text.includes('studio') || text.includes('bhk')) {
+          setPropertyType('Flat / Apartment');
+        } else if (text.includes('house') || text.includes('villa') || text.includes('bungalow')) {
+          setPropertyType('Independent House');
+        } else if (text.includes('plot') || text.includes('land')) {
+          setPropertyType('Plot / Land');
+        } else if (text.includes('office') || text.includes('shop')) {
+          setPropertyType('Commercial Office');
+        } else {
+          setPropertyType('Flat / Apartment');
+        }
+      }
+      if (editData.configuration || editData.bhk) {
+        setConfiguration((editData.configuration || editData.bhk || '').toString());
+      } else if (editData.lookingFor || editData.description) {
+        const text = (editData.lookingFor || editData.description || '').toString();
+        const match = text.match(/\b(\d+)\s*(BHK|RK)\b/i);
+        if (match) setConfiguration(`${match[1]} ${match[2].toUpperCase()}`);
+      }
+      if (editData.budgetMax || editData.budget || editData.price) {
+        const rawBudget = (editData.budgetMax || editData.budget || editData.price || '').toString();
+        const numOnly = rawBudget.replace(/[^0-9.]/g, '');
+        if (numOnly) {
+          setPrice(rawBudget.includes('Lakhs') || rawBudget.includes('L') || rawBudget.includes('Cr') ? rawBudget : numOnly);
+        } else {
+          setPrice(rawBudget);
+        }
+      }
+      if (editData.minimumSize || editData.size) {
+        setSize((editData.minimumSize || editData.size || '').toString());
+      }
+      if (editData.description || editData.lookingFor || editData.additionalNotes) {
+        setDescription((editData.description || editData.lookingFor || editData.additionalNotes || '').toString());
+      }
+      if (editData.projectName || editData.buildingName || editData.title) {
+        setProjectName((editData.projectName || editData.buildingName || editData.title || '').toString());
+      }
+    }
+  }, [editData]);
+
   // ── Validation errors ────────────────────────────────────────────────────
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -200,48 +254,65 @@ export default function AddRequirementScreen() {
       return;
     }
 
+    setIsSubmitting(true);
+    const hasPerm = await requestLocationPermissions();
+    if (!hasPerm) {
+      setIsSubmitting(false);
+      Alert.alert('Location Permission Denied', 'Location permission is required to obtain valid GPS coordinates for matching. Please grant access in device settings.');
+      return;
+    }
+
+    let lat = 0;
+    let lng = 0;
+    try {
+      const coords = await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+        Geolocation.getCurrentPosition(
+          (pos) => resolve(pos.coords),
+          (err) => reject(err),
+          { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+        );
+      });
+      lat = coords.latitude;
+      lng = coords.longitude;
+    } catch (err) {
+      setIsSubmitting(false);
+      Alert.alert('GPS Unavailable', 'Could not obtain valid GPS coordinates. Please ensure GPS/location services are turned on and try again.');
+      return;
+    }
+
+    if (!lat || !lng || (lat === 0 && lng === 0)) {
+      setIsSubmitting(false);
+      Alert.alert('Invalid Coordinates', 'Obtained invalid GPS coordinates. Please check your GPS signal and try again.');
+      return;
+    }
+
     const normalizedPhone = normalizePhone(contactNumber);
     const payload: Record<string, any> = {
-      listingType: 'REQUIREMENT',
-      senderName: senderName.trim(),
-      contactNumber: normalizedPhone,
-      contactName: senderName.trim(),
-      messageDate: formatDateDDMMYY(new Date()),
+      transactionType: 'RENTAL', // Defaulting for now
+      category: 'Residential',
+      description: description.trim() || undefined,
+      minimumSize: size ? Number(size) : undefined,
+      budgetMax: price ? Number(price) : undefined,
+      city: location.trim().split(',').pop()?.trim() || 'Unknown',
+      locality: location.trim(),
+      lat,
+      lng,
+      radiusKm: 5.0,
       propertyType,
-      location: location.trim(),
+      configuration,
     };
 
-    // Attach optional fields only if non-empty
-    if (configuration) payload.configuration = configuration;
-    if (projectName.trim()) payload.projectName = projectName.trim();
-    if (size) payload.size = Number(size);
-    if (sizeUnit) payload.sizeUnit = sizeUnit;
-    if (price) payload.price = Number(price);
-    if (facing) payload.facing = facing;
-    if (furnishing) payload.furnishing = furnishing;
-    if (description.trim()) payload.description = description.trim();
-
     try {
-      setIsSubmitting(true);
-      const response = await axios.post(REQUIREMENT_ENDPOINT, payload, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 15000,
-      });
+      const data = await addRequirement(payload);
 
-      const data = response.data;
-      if (data?.requirementsInserted > 0) {
+      if (data) {
         Alert.alert(
           '✅ Requirement Submitted!',
           'Requirement submitted successfully. Matching has started.',
           [{ text: 'Done', onPress: () => navigation.goBack() }],
         );
-      } else if (data?.skipped > 0) {
-        Alert.alert(
-          'Already Exists',
-          'A similar requirement already exists. Try changing the location or configuration.',
-        );
       } else {
-        Alert.alert('Not Saved', data?.message || 'Requirement could not be saved. Please try again.');
+        Alert.alert('Not Saved', 'Requirement could not be saved. Please try again.');
       }
     } catch (error: any) {
       const msg =

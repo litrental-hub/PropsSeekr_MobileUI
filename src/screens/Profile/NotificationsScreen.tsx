@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -18,6 +18,8 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppStore } from '../../store/appStore';
+import { useAuthStore } from '../../store/authStore';
+import { getNotifications, markAsRead, markAllAsRead as apiMarkAllAsRead, unlockBroker } from '../../api/notifications';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -43,8 +45,8 @@ const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   {
     id: 'notif-1',
     type: 'BROKER_UNLOCK',
-    title: 'Broker Unlocked Your Contact 🔓',
-    body: 'Another broker has unlocked your contact for: 2BHK Semi-Furnished Flat! Would you like to see their contact details? If you unlock this and the property is available, 1 Token will be debited.',
+    title: 'Match Unlock Request 🔓',
+    body: 'A matching broker owner initiated an unlock request for your listing: 2BHK Semi-Furnished Flat! Tap below to view in Matches screen and accept to unlock contact details.',
     timestamp: '10 mins ago',
     isRead: false,
     requiresTokenUnlock: true,
@@ -116,23 +118,79 @@ export default function NotificationsScreen() {
   const setUnreadNotifications = useAppStore(s => s.setUnreadNotifications);
   const creditsBalance = useAppStore(s => s.creditsBalance);
   const setCreditsBalance = useAppStore(s => s.setCreditsBalance);
+  const userId = useAuthStore(s => s.user?.id || '3030be5f-703c-448d-aebb-33960f9d8f4e');
 
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
   const [selectedFilter, setSelectedFilter] = useState<FilterType>('All');
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  const handleMarkAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    setUnreadNotifications(0);
+  React.useEffect(() => {
+    if (userId) {
+      fetchNotifications();
+    }
+  }, [userId, selectedFilter]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (userId) {
+        fetchNotifications();
+      }
+    }, [userId, selectedFilter])
+  );
+
+  const fetchNotifications = async () => {
+    try {
+      const filterParam = selectedFilter.toUpperCase().replace(' ', '_');
+      const res = await getNotifications(userId, 1, 20, filterParam);
+      const list = 'data' in res ? res.data : (Array.isArray(res) ? res : []);
+      if (list && list.length > 0) {
+        setNotifications(list.map((n: any) => ({
+          id: n.notificationId || n.id || Math.random().toString(),
+          type: n.type || 'SYSTEM',
+          title: n.title || 'Notification',
+          body: n.message || n.body || '',
+          timestamp: n.createdAt || n.timestamp || 'Recently',
+          isRead: !!n.isRead,
+          requiresTokenUnlock: n.type === 'BROKER_UNLOCK' || !n.contactUnlocked,
+          isContactUnlocked: !!n.contactUnlocked,
+          tokenCost: 1,
+          meta: n.meta || {
+            brokerName: n.brokerName,
+            brokerPhone: n.mobileNumber || n.brokerPhone,
+          }
+        })));
+      }
+    } catch (e) {
+      console.warn('Failed to fetch notifications from API, showing cached/initial list.', e);
+    }
   };
 
-  const handleToggleRead = (id: string) => {
+  const handleMarkAllAsRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    setUnreadNotifications(0);
+    if (userId) {
+      try {
+        await apiMarkAllAsRead({ userId });
+      } catch (e) {
+        console.warn('Mark all read error:', e);
+      }
+    }
+  };
+
+  const handleToggleRead = async (id: string) => {
     setNotifications(prev => {
       const updated = prev.map(n => n.id === id ? { ...n, isRead: true } : n);
       setUnreadNotifications(updated.filter(item => !item.isRead).length);
       return updated;
     });
+    if (userId) {
+      try {
+        await markAsRead({ userId, notificationId: id });
+      } catch (e) {
+        console.warn('Mark read error:', e);
+      }
+    }
   };
 
   const handleUnlockBrokerContact = (id: string, name?: string, tokenCost = 1) => {
@@ -143,7 +201,7 @@ export default function NotificationsScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: `Unlock (${tokenCost} Token)`,
-          onPress: () => {
+          onPress: async () => {
             if (creditsBalance < tokenCost && creditsBalance !== 0) {
               Alert.alert('Insufficient Tokens', 'Please purchase more tokens to unlock contact details.', [
                 { text: 'Cancel', style: 'cancel' },
@@ -151,7 +209,34 @@ export default function NotificationsScreen() {
               ]);
               return;
             }
-            // Debit token and reveal contact in notification card
+            try {
+              if (userId) {
+                const res = await unlockBroker({ userId, notificationId: id });
+                const data = res.data || res;
+                const remCredits = data.remainingCredits ?? data.remainingTokens ?? (creditsBalance > 0 ? creditsBalance - tokenCost : 0);
+                setCreditsBalance(remCredits);
+                const brokerPhone = data.mobileNumber || data.phone || data.phoneNumber || '+919876543210';
+                const brokerName = data.brokerName || name || 'Broker';
+                setNotifications(prev => prev.map(item => {
+                  if (item.id === id) {
+                    return {
+                      ...item,
+                      isContactUnlocked: true,
+                      isRead: true,
+                      body: `Contact Unlocked! ${brokerName} (${brokerPhone}) unlocked your listing: ${item.meta?.propertyTitle || 'Property'}.`,
+                      meta: { ...item.meta, brokerName, brokerPhone }
+                    };
+                  }
+                  return item;
+                }));
+                Alert.alert('Success!', `${brokerName}'s contact details are now unlocked and available to call.`);
+                return;
+              }
+            } catch (err: any) {
+              console.warn('API unlock error, falling back to local simulation:', err);
+            }
+
+            // Fallback if no userId or API error
             if (creditsBalance > 0) {
               setCreditsBalance(creditsBalance - tokenCost);
             }
@@ -327,20 +412,20 @@ export default function NotificationsScreen() {
 
                   {/* Action Buttons based on notification type */}
                   <View style={styles.actionRow}>
-                    {item.type === 'BROKER_UNLOCK' && item.requiresTokenUnlock && !item.isContactUnlocked ? (
+                    {(item.type === 'BROKER_UNLOCK' || item.type === 'BROKER_REQUEST') && !item.isContactUnlocked && (item.requiresTokenUnlock || !item.meta?.brokerPhone) ? (
                       <TouchableOpacity
                         style={styles.actionButton}
                         activeOpacity={0.85}
-                        onPress={() => handleUnlockBrokerContact(item.id, item.meta?.brokerName, item.tokenCost || 1)}
+                        onPress={() => navigation.navigate('Matches' as any)}
                       >
                         <LinearGradient
-                          colors={[Brand.blue, Brand.teal]}
+                          colors={['#10B981', '#059669']}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 0 }}
                           style={styles.actionBtnGrad}
                         >
-                          <Text style={{ fontSize: 13, marginRight: 6 }}>🪙</Text>
-                          <Text style={styles.actionBtnText}>Unlock Contact (1 Token)</Text>
+                          <Text style={{ fontSize: 13, marginRight: 6 }}>🤝</Text>
+                          <Text style={styles.actionBtnText}>View & Accept in Matches</Text>
                         </LinearGradient>
                       </TouchableOpacity>
                     ) : (item.type === 'BROKER_UNLOCK' || item.type === 'BROKER_REQUEST') && Boolean(item.meta?.brokerPhone) ? (

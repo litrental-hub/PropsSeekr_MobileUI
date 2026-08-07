@@ -21,23 +21,23 @@ import { z } from 'zod';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAppStore } from '../../store/appStore';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
-import { register } from '../../api/auth';
+import { register, sendEmailOTP } from '../../api/auth';
 
 // ── Validation ─────────────────────────────────────────────
 const registrationSchema = z.object({
-  name:     z.string().min(2, 'Name must be at least 2 characters'),
-  mobile:   z.string().regex(/^[0-9]{10}$/, 'Must be a valid 10-digit mobile number'),
-  email:    z.string().email('Must be a valid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  aadhaar:  z.string().optional(),
-  pan:      z.string().optional(),
-  gst:      z.string().optional(),
-  rera:     z.string().optional(),
-}).superRefine((data, ctx) => {
-  if (!data.aadhaar && !data.pan) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Either Aadhaar or PAN is required', path: ['aadhaar'] });
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Either Aadhaar or PAN is required', path: ['pan'] });
-  }
+  name:         z.string().min(2, 'Name must be at least 2 characters'),
+  mobile:       z.string().regex(/^[0-9]{10}$/, 'Must be a valid 10-digit mobile number'),
+  email:        z.string().email('Must be a valid email address'),
+  password:     z.string().min(8, 'Password must be at least 8 characters'),
+  addressLine1: z.string().min(3, 'Address Line 1 is required'),
+  addressLine2: z.string().optional(),
+  city:         z.string().min(2, 'City is required'),
+  state:        z.string().min(2, 'State is required'),
+  pincode:      z.string().regex(/^[0-9]{6}$/, 'Must be a valid 6-digit pincode'),
+  aadhaar:      z.string().regex(/^[0-9]{12}$/, 'Must be a valid 12-digit Aadhaar number'),
+  pan:          z.string().regex(/^[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}$/, 'Must be a valid 10-character PAN'),
+  gst:          z.string().optional(),
+  rera:         z.string().optional(),
 });
 
 type RegistrationFormData = z.infer<typeof registrationSchema>;
@@ -48,7 +48,11 @@ export default function RegistrationScreen() {
 
   const { control, handleSubmit, formState: { errors } } = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),
-    defaultValues: { name: '', mobile: '', email: '', password: '', aadhaar: '', pan: '', gst: '', rera: '' },
+    defaultValues: {
+      name: '', mobile: '', email: '', password: '',
+      addressLine1: '', addressLine2: '', city: '', state: '', pincode: '',
+      aadhaar: '', pan: '', gst: '', rera: '',
+    },
   });
 
   const [isLoading, setIsLoading] = React.useState(false);
@@ -57,24 +61,51 @@ export default function RegistrationScreen() {
     try {
       setIsLoading(true);
       const payload = {
-        name: data.name,
-        mobile: data.mobile,
-        email: data.email,
+        name: data.name.trim(),
+        mobile: data.mobile.trim(),
+        email: data.email.trim(),
         password: data.password,
-        aadharNumber: data.aadhaar,
-        panCard: data.pan,
-        gstNumber: data.gst,
-        reraRegistrationNumber: data.rera,
+        addressLine1: data.addressLine1.trim(),
+        addressLine2: data.addressLine2?.trim() ? data.addressLine2.trim() : undefined,
+        city: data.city.trim(),
+        state: data.state.trim(),
+        pincode: data.pincode.trim(),
+        aadharNumber: data.aadhaar.trim(),
+        panCard: data.pan.trim().toUpperCase(),
+        gstNumber: data.gst?.trim() ? data.gst.trim().toUpperCase() : undefined,
+        reraRegistrationNumber: data.rera?.trim() ? data.rera.trim().toUpperCase() : undefined,
       };
       
       const response = await register(payload);
-      Alert.alert('Success', response.message || 'Registration successful. OTP verification is pending.');
       
-      // Navigate to OTP screen instead of Login
+      // Send Email OTP for verification
+      try {
+        await sendEmailOTP({ email: data.email, purpose: 'EmailVerification' });
+      } catch (e) {
+        console.warn('Could not trigger sendEmailOTP:', e);
+      }
+
+      Alert.alert('Success', response.message || 'Registration successful. OTP sent to your email.');
+      
+      // Navigate to OTP screen passing email to enable Email OTP verification
       navigation.navigate('OTP', { email: data.email });
     } catch (error: any) {
-      console.error('Registration Error:', error);
-      Alert.alert('Registration Failed', error.response?.data?.message || 'Something went wrong. Please try again.');
+      console.warn('Registration Attempt Failed:', error.response?.data || error.message);
+      let errorMessage = 'Something went wrong. Please try again.';
+      const resData = error.response?.data;
+      if (resData) {
+        if (resData.errors && typeof resData.errors === 'object') {
+          const firstErrKey = Object.keys(resData.errors)[0];
+          if (firstErrKey && Array.isArray(resData.errors[firstErrKey])) {
+            errorMessage = resData.errors[firstErrKey][0];
+          }
+        } else if (resData.message && typeof resData.message === 'string') {
+          errorMessage = resData.message;
+        } else if (resData.title && typeof resData.title === 'string') {
+          errorMessage = resData.title;
+        }
+      }
+      Alert.alert('Registration Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -218,11 +249,119 @@ export default function RegistrationScreen() {
                 />
               </Field>
 
+              {/* Address divider */}
+              <SectionDivider title="Office / Address Details" desc="Required for local market discovery and compliance." colors={colors} Brand={Brand} />
+
+              {/* Address Line 1 */}
+              <Field label="Address Line 1 *" error={errors.addressLine1?.message} colors={colors}>
+                <Controller
+                  control={control}
+                  name="addressLine1"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <InputBox
+                      prefix="📍"
+                      placeholder="e.g. 102, Sun Heights, MG Road"
+                      hasError={!!errors.addressLine1}
+                      value={value ?? ''}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      colors={colors}
+                      Brand={Brand}
+                    />
+                  )}
+                />
+              </Field>
+
+              {/* Address Line 2 */}
+              <Field label="Address Line 2 (Optional)" error={errors.addressLine2?.message} colors={colors}>
+                <Controller
+                  control={control}
+                  name="addressLine2"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <InputBox
+                      prefix="🏢"
+                      placeholder="e.g. Suite 10, Commercial Tower"
+                      value={value ?? ''}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      colors={colors}
+                      Brand={Brand}
+                    />
+                  )}
+                />
+              </Field>
+
+              {/* City & State Row */}
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Field label="City *" error={errors.city?.message} colors={colors}>
+                    <Controller
+                      control={control}
+                      name="city"
+                      render={({ field: { onChange, onBlur, value } }) => (
+                        <InputBox
+                          prefix="🏙️"
+                          placeholder="e.g. Mumbai"
+                          hasError={!!errors.city}
+                          value={value ?? ''}
+                          onBlur={onBlur}
+                          onChangeText={onChange}
+                          colors={colors}
+                          Brand={Brand}
+                        />
+                      )}
+                    />
+                  </Field>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Field label="State *" error={errors.state?.message} colors={colors}>
+                    <Controller
+                      control={control}
+                      name="state"
+                      render={({ field: { onChange, onBlur, value } }) => (
+                        <InputBox
+                          prefix="🗺️"
+                          placeholder="e.g. Maharashtra"
+                          hasError={!!errors.state}
+                          value={value ?? ''}
+                          onBlur={onBlur}
+                          onChangeText={onChange}
+                          colors={colors}
+                          Brand={Brand}
+                        />
+                      )}
+                    />
+                  </Field>
+                </View>
+              </View>
+
+              {/* Pincode */}
+              <Field label="Pincode *" error={errors.pincode?.message} colors={colors}>
+                <Controller
+                  control={control}
+                  name="pincode"
+                  render={({ field: { onChange, onBlur, value } }) => (
+                    <InputBox
+                      prefix="📮"
+                      placeholder="e.g. 400053"
+                      hasError={!!errors.pincode}
+                      value={value ?? ''}
+                      onBlur={onBlur}
+                      onChangeText={onChange}
+                      keyboardType="numeric"
+                      maxLength={6}
+                      colors={colors}
+                      Brand={Brand}
+                    />
+                  )}
+                />
+              </Field>
+
               {/* KYC divider */}
-              <SectionDivider title="KYC Verification" desc="Provide either Aadhaar or PAN to proceed." colors={colors} Brand={Brand} />
+              <SectionDivider title="KYC Verification" desc="Both Aadhaar and PAN are mandatory for verified brokers." colors={colors} Brand={Brand} />
 
               {/* Aadhaar */}
-              <Field label="Aadhaar Number" error={errors.aadhaar?.message} colors={colors}>
+              <Field label="Aadhaar Number *" error={errors.aadhaar?.message} colors={colors}>
                 <Controller
                   control={control}
                   name="aadhaar"
@@ -235,6 +374,7 @@ export default function RegistrationScreen() {
                       onBlur={onBlur}
                       onChangeText={onChange}
                       keyboardType="numeric"
+                      maxLength={12}
                       colors={colors}
                       Brand={Brand}
                     />
@@ -243,7 +383,7 @@ export default function RegistrationScreen() {
               </Field>
 
               {/* PAN */}
-              <Field label="PAN Number" error={errors.pan?.message} colors={colors}>
+              <Field label="PAN Number *" error={errors.pan?.message} colors={colors}>
                 <Controller
                   control={control}
                   name="pan"

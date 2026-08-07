@@ -16,7 +16,20 @@
   },
   "dashboard": {
     "welcome": "वापसी पर स्वागत है",
-    "matches": "मिलान"
+    "matches": "मिलान",
+    "rental": "किराया",
+    "buySell": "खरीदें/बेचें",
+    "change": "बदलें →",
+    "searchPlaceholder": "क्षेत्र, संपत्ति प्रकार, बजट...",
+    "filter": "फ़िल्टर",
+    "available": "उपलब्ध",
+    "looking": "तलाश",
+    "nearby": "आपके आस-पास",
+    "noMatches": "के लिए कोई संपत्ति नहीं मिली",
+    "addProperty": "संपत्ति जोड़ें",
+    "addRequirement": "आवश्यकता जोड़ें",
+    "uploadFile": "फ़ाइल अपलोड करें",
+    "quickActions": "त्वरित कार्रवाइयाँ"
   },
   "addProperty": {
     "newListing": "नई लिस्टिंग",
@@ -97,6 +110,73 @@
     "gst": "जीएसटी (18%)",
     "total": "कुल",
     "payBtn": "₹{{amount}} चुकाएं →",
-    "securedBy": "रेज़रपे द्वारा सुरक्षित"
+    "securedBy": "रेज़रपे द्वारा सुरक्षित",
+    "unlockDemo": "कॉन्टेक्ट अनलॉक करें (डेमो)",
+    "unlockDemoSub": "सैंपल ब्रोकर नंबर अनलॉक करके देखें",
+    "historyModalTitle": "टोकन उपयोग इतिहास",
+    "close": "बंद करें"
+  },
+  "unlock": {
+    "title": "संपर्क अनलॉक करें",
+    "costValue": "1 टोकन",
+    "costLabel": "संपर्क विवरण अनलॉक करने के लिए",
+    "yourBalance": "आपका बैलेंस:",
+    "newBalance": "नया बैलेंस",
+    "tokens": "टोकन",
+    "lastTokenWarning": "⚠️ यह आपका आखिरी टोकन होगा",
+    "cancel": "रद्द करें",
+    "confirmBtn": "अभी अनलॉक करें 🔓",
+    "successTitle": "संपर्क अनलॉक हो गया!",
+    "successSub": "अब आप सीधे बात कर सकते हैं",
+    "role": "संपत्ति के मालिक",
+    "waAvailable": "व्हॉट्सऐप उपलब्ध है",
+    "callNow": "📞 अभी कॉल करें",
+    "waBtn": "💬 व्हॉट्सऐप करें",
+    "footerText": "1 टोकन खर्च · {{remaining}} टोकन बचे हैं",
+    "backLink": "लिस्टिंग पर वापस जाएं →"
+  },
+  "matchesScreen": {
+    "noMatchesYet": "अभी कोई मैच नहीं",
+    "loadingMore": "और लोड हो रहा है...",
+    "retry": "पुनः प्रयास करें",
+    "matchesCount": "मैच",
+    "score": "स्कोर",
+    "property": "संपत्ति ब्रोकर",
+    "buyer": "आवश्यकता ब्रोकर",
+    "notifSent": "सूचित किया गया",
+    "pendingApproval": "अनुमोदन लंबित",
+    "acceptAndUnlock": "स्वीकार करें और अनलॉक करें",
+    "unlockContact": "संपर्क अनलॉक करें",
+    "unlocked": "संपर्क अनलॉक किया गया",
+    "moreDetails": "अधिक विवरण"
+  },
+  "myProperties": {
+    "title": "मेरी संपत्तियाँ",
+    "addPropertyBtn": "+ संपत्ति",
+    "addRequirementBtn": "+ आवश्यकता",
+    "views": "बार देखा गया",
+    "matches": "मैच",
+    "edit": "संपादित करें",
+    "clientReq": "क्लाइंट की आवश्यकता",
+    "budget": "बजट:",
+    "noProperties": "अभी कोई संपत्ति नहीं डाली गई है।",
+    "noRequirements": "अभी कोई आवश्यकता नहीं डाली गई है।"
+  },
+  "searchScreen": {
+    "selectLocation": "मानचित्र पर स्थान चुनें",
+    "searchGo": "खोजें",
+    "locateMe": "मेरा स्थान",
+    "radiusLabel": "खोज दायरा (KM)",
+    "confirmBtn": "स्थान और दायरा पुष्टि करें →"
+  },
+  "loginScreen": {
+    "taglineFind": "खोजें.",
+    "taglineMatch": " मिलाएँ.",
+    "taglineClose": " सौदा करें.",
+    "headline": "भारत का सबसे स्मार्ट\nब्रोकर प्लेटफॉर्म",
+    "loginBtn": "लॉगिन करें →",
+    "terms": "शर्ते और गोपनीयता नीति",
+    "newHere": "नए हैं?",
+    "createAccount": "खाता बनाएं"
   }
 }

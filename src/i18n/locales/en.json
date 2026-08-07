@@ -16,7 +16,20 @@
   },
   "dashboard": {
     "welcome": "Welcome back",
-    "matches": "Matches"
+    "matches": "Matches",
+    "rental": "Rental",
+    "buySell": "Buy/Sell",
+    "change": "Change →",
+    "searchPlaceholder": "Area, property type, budget...",
+    "filter": "Filter",
+    "available": "Available",
+    "looking": "Looking",
+    "nearby": "NEARBY LISTINGS",
+    "noMatches": "No matching properties found for",
+    "addProperty": "Add Properties",
+    "addRequirement": "Add Requirement",
+    "uploadFile": "Upload File",
+    "quickActions": "Quick Actions"
   },
   "addProperty": {
     "newListing": "New Listing",
@@ -97,6 +110,73 @@
     "gst": "GST (18%)",
     "total": "Total",
     "payBtn": "Pay ₹{{amount}} →",
-    "securedBy": "Secured by Razorpay"
+    "securedBy": "Secured by Razorpay",
+    "unlockDemo": "Unlock Contact (Demo)",
+    "unlockDemoSub": "Try unlocking a sample broker contact",
+    "historyModalTitle": "Token Usage History",
+    "close": "Close"
+  },
+  "unlock": {
+    "title": "Unlock Contact",
+    "costValue": "1 token",
+    "costLabel": "to unlock contact details",
+    "yourBalance": "Your balance:",
+    "newBalance": "New Balance",
+    "tokens": "tokens",
+    "lastTokenWarning": "⚠️ This will use your last token",
+    "cancel": "Cancel",
+    "confirmBtn": "Unlock Now 🔓",
+    "successTitle": "Contact Unlocked!",
+    "successSub": "You can now contact directly",
+    "role": "Property Owner",
+    "waAvailable": "WhatsApp available",
+    "callNow": "📞 Call Now",
+    "waBtn": "💬 WhatsApp Now",
+    "footerText": "1 token spent · {{remaining}} tokens remaining",
+    "backLink": "Back to listing →"
+  },
+  "matchesScreen": {
+    "noMatchesYet": "No matches yet",
+    "loadingMore": "Loading more…",
+    "retry": "Retry",
+    "matchesCount": "matches",
+    "score": "score",
+    "property": "PROPERTY BROKER",
+    "buyer": "REQUIREMENT BROKER",
+    "notifSent": "Notified",
+    "pendingApproval": "Pending Approval",
+    "acceptAndUnlock": "Accept & Unlock",
+    "unlockContact": "Unlock Contact",
+    "unlocked": "Contact Unlocked",
+    "moreDetails": "More Details"
+  },
+  "myProperties": {
+    "title": "My Properties",
+    "addPropertyBtn": "+ Property",
+    "addRequirementBtn": "+ Requirement",
+    "views": "views",
+    "matches": "matches",
+    "edit": "Edit",
+    "clientReq": "Client Requirement",
+    "budget": "Budget:",
+    "noProperties": "No properties listed yet.",
+    "noRequirements": "No requirements posted yet."
+  },
+  "searchScreen": {
+    "selectLocation": "Select Location on Map",
+    "searchGo": "Search",
+    "locateMe": "Locate Me",
+    "radiusLabel": "SEARCH RADIUS (KM)",
+    "confirmBtn": "Confirm Location & Radius →"
+  },
+  "loginScreen": {
+    "taglineFind": "FIND.",
+    "taglineMatch": " MATCH.",
+    "taglineClose": " CLOSE.",
+    "headline": "India's Smartest\nBroker Platform",
+    "loginBtn": "Login →",
+    "terms": "Terms & Privacy Policy",
+    "newHere": "New here?",
+    "createAccount": "Create an account"
   }
 }

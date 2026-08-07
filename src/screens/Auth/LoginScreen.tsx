@@ -24,6 +24,7 @@ import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { checkBiometricSupport, hasSavedCredentials, getSavedCredentials, saveCredentials } from '../../utils/biometrics';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useTranslation } from 'react-i18next';
 
 // ─────────────────────────────────────────────────────────────
 // LoginScreen
@@ -33,10 +34,12 @@ export default function LoginScreen() {
   const navigation = useNavigation<any>();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [canBiometric, setCanBiometric] = useState(false);
   const passwordInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  const { t } = useTranslation();
   
   const { colors, type, isDark } = useAppTheme();
 
@@ -130,16 +133,16 @@ export default function LoginScreen() {
                   {/* FIND. MATCH. CLOSE. tagline */}
                   <View style={styles.taglineRow}>
                     <View style={styles.taglineLine} />
-                    <Text style={styles.taglineFind}>FIND.</Text>
-                    <Text style={styles.taglineMatch}> MATCH.</Text>
-                    <Text style={styles.taglineClose}> CLOSE.</Text>
+                    <Text style={styles.taglineFind}>{t('loginScreen.taglineFind')}</Text>
+                    <Text style={styles.taglineMatch}>{t('loginScreen.taglineMatch')}</Text>
+                    <Text style={styles.taglineClose}>{t('loginScreen.taglineClose')}</Text>
                     <View style={[styles.taglineLine, { backgroundColor: Brand.teal }]} />
                   </View>
                 </View>
 
                 {/* ── Headline ── */}
                 <View style={styles.headlineSection}>
-                  <Text style={[styles.headline, { color: colors.textPrimary }]}>India's Smartest{'\n'}Broker Platform</Text>
+                  <Text style={[styles.headline, { color: colors.textPrimary }]}>{t('loginScreen.headline')}</Text>
                   <Text style={[styles.sub, { color: colors.textSecondary }]}>
                     Connect with other brokers, match properties &amp; requirements,{'\n'}and close deals faster.
                   </Text>
@@ -187,7 +190,7 @@ export default function LoginScreen() {
                         placeholderTextColor={colors.textDim}
                         value={password}
                         onChangeText={setPassword}
-                        secureTextEntry
+                        secureTextEntry={!showPassword}
                         returnKeyType="done"
                         onFocus={() => {
                           setTimeout(() => {
@@ -196,6 +199,17 @@ export default function LoginScreen() {
                         }}
                         onSubmitEditing={handleLogin}
                       />
+                      <TouchableOpacity
+                        onPress={() => setShowPassword(!showPassword)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <MaterialCommunityIcons
+                          name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                          size={22}
+                          color={colors.textDim}
+                        />
+                      </TouchableOpacity>
                     </LinearGradient>
                   </View>
 
@@ -210,14 +224,14 @@ export default function LoginScreen() {
                       {isLoading ? (
                         <ActivityIndicator color="#FFFFFF" />
                       ) : (
-                        <Text style={styles.ctaBtnText}>Login →</Text>
+                        <Text style={styles.ctaBtnText}>{t('loginScreen.loginBtn')}</Text>
                       )}
                     </LinearGradient>
                   </TouchableOpacity>
 
                   <Text style={[styles.legal, { color: colors.textDim }]}>
                     By continuing, you agree to PropSeekr's{' '}
-                    <Text style={styles.legalLink}>Terms &amp; Privacy Policy</Text>
+                    <Text style={styles.legalLink}>{t('loginScreen.terms')}</Text>
                   </Text>
                 </View>
 
@@ -228,7 +242,7 @@ export default function LoginScreen() {
                   activeOpacity={0.75}
                 >
                   <Text style={[styles.registerText, { color: colors.textSecondary }]}>
-                    New here? <Text style={styles.registerLink}>Create an account</Text>
+                    {t('loginScreen.newHere')} <Text style={styles.registerLink}>{t('loginScreen.createAccount')}</Text>
                   </Text>
                 </TouchableOpacity>
 

@@ -41,8 +41,8 @@ export type RootStackParamList = {
   MainTabs: undefined;
 
   // Modals
-  AddProperty: { editId?: string };
-  AddRequirement: { editId?: string };
+  AddProperty: { editId?: string; initialData?: any };
+  AddRequirement: { editId?: string; initialData?: any };
   PropertyDetail: { propertyId: string };
   RequirementDetail: { requirementId: string };
   MatchDetail: { matchId: string };

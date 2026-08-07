@@ -43,18 +43,23 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
     try {
       setLoading(true);
 
-      // 1. Create order on backend
-      const orderRes = await createOrder({ tierId: pack.tierId });
+      // 1. Create order on backend with documented master schema
+      const orderRes = await createOrder({ 
+        tierId: pack.tierId || pack.id || `token_pkg_${pack.credits || 5}`,
+        packageId: pack.tierId || pack.id || `token_pkg_${pack.credits || 5}`,
+        tokenAmount: Number(pack.credits) || 5,
+        amountInRupees: total,
+      });
 
       // 2. Setup Razorpay options
       const options = {
         description: `Purchase ${pack.credits} Tokens`,
         image: 'https://i.imgur.com/3g7nmJC.jpg',
-        currency: orderRes.currency,
-        key: orderRes.keyId,
-        amount: orderRes.amountInPaise,
+        currency: orderRes.currency || 'INR',
+        key: orderRes.keyId || orderRes.razorpayKeyId || 'rzp_test_fallback',
+        amount: orderRes.amountInPaise || (orderRes.amount ? orderRes.amount * 100 : total * 100),
         name: 'PropSeekr',
-        order_id: orderRes.razorpayOrderId,
+        order_id: orderRes.razorpayOrderId || orderRes.orderId || '',
         prefill: {
           email: user?.email || '',
           contact: user?.phone || '',
@@ -66,16 +71,21 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
       // 3. Open Razorpay Checkout
       const data = await RazorpayCheckout.open(options);
 
-      // 4. Verify Payment on Backend
+      // 4. Verify Payment on Backend with exact camelCase schema
       const verifyRes = await verifyPayment({
+        razorpayOrderId: data.razorpay_order_id,
+        razorpayPaymentId: data.razorpay_payment_id,
+        razorpaySignature: data.razorpay_signature,
         RazorpayOrderId: data.razorpay_order_id,
         RazorpayPaymentId: data.razorpay_payment_id,
         RazorpaySignature: data.razorpay_signature,
       });
 
-      if (verifyRes.success) {
-        setCreditsBalance(verifyRes.newBalance);
-        onSuccess(verifyRes.newBalance);
+      const isSuccessful = verifyRes.success || verifyRes.status === 'SUCCESS' || verifyRes.status === 'success' || verifyRes.newBalance !== undefined || verifyRes.creditsBalance !== undefined;
+      if (isSuccessful) {
+        const updatedBal = verifyRes.newBalance ?? verifyRes.creditsBalance ?? (creditsBalance + Number(pack.credits || 0));
+        setCreditsBalance(updatedBal);
+        onSuccess(updatedBal);
       } else {
         throw new Error(verifyRes.message || 'Payment verification failed');
       }

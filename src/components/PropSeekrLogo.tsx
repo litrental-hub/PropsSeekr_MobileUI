@@ -19,7 +19,7 @@ export function PropSeekrLogo({
     : require('../assets/clean-logo/propseekr-logo-light-plain-transparent.png');
 
   // Scale the image based on the original base size to match previous dimensions
-  const scale = layout === 'horizontal' ? 1.5 : 2.0; // Reduced scale from 2.5 to 2.0 to make it smaller
+  const scale = layout === 'horizontal' ? 2.2 : 2.3; // Increased scale for prominent top-left logo visibility across all screens
   const imgSize = size * scale;
 
   return (

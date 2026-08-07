@@ -6,16 +6,22 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { getMyRequirements } from '../../api/requirements';
+import { getMyListings } from '../../api/property';
 
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
+import { formatPrice } from '../../utils/formatters';
+import { useTranslation } from 'react-i18next';
+import { useAppStore } from '../../store/appStore';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -95,7 +101,50 @@ export default function MyPropertiesScreen() {
   const navigation = useNavigation<Nav>();
   const { colors, type } = useAppTheme();
   const isDark = type === 'dark';
+  const { t } = useTranslation();
+  const { sectionType, setSectionType } = useAppStore();
   const [activeTab, setActiveTab] = useState<'Properties' | 'Requirements'>('Properties');
+  const [requirements, setRequirements] = useState<any[]>([]);
+  const [properties, setProperties] = useState<any[]>(MOCK_MY_PROPERTIES);
+  const [loadingReq, setLoadingReq] = useState(false);
+  const [loadingProp, setLoadingProp] = useState(false);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (activeTab === 'Requirements') {
+        fetchRequirements();
+      } else {
+        fetchProperties();
+      }
+    }, [activeTab])
+  );
+
+  const fetchProperties = async () => {
+    try {
+      setLoadingProp(true);
+      const res = await getMyListings(1, 20);
+      const list = (res as any)?.listings || (res as any)?.data || (Array.isArray(res) ? res : []);
+      if (list && list.length > 0) {
+        setProperties(list);
+      }
+    } catch (err) {
+      console.log('Error fetching properties:', err);
+    } finally {
+      setLoadingProp(false);
+    }
+  };
+
+  const fetchRequirements = async () => {
+    try {
+      setLoadingReq(true);
+      const data = await getMyRequirements(1, 20);
+      setRequirements(data?.data || data || []);
+    } catch (err) {
+      console.log('Error fetching requirements:', err);
+    } finally {
+      setLoadingReq(false);
+    }
+  };
 
   const handleAddProperty = () => {
     navigation.navigate('AddProperty', {});
@@ -105,11 +154,11 @@ export default function MyPropertiesScreen() {
     navigation.navigate('AddRequirement', {});
   };
 
-  const renderPropertyCard = (item: PropertyItem) => (
-    <View key={item.id} style={[styles.card, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+  const renderPropertyCard = (item: any) => (
+    <View key={item.id || item.listingId || Math.random().toString()} style={[styles.card, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
       <View style={styles.cardHeader}>
         <View style={styles.tagWrap}>
-          <Text style={styles.tagText}>{item.type}</Text>
+          <Text style={styles.tagText}>{item.type || item.propertyType || 'RENTAL'}</Text>
         </View>
         <View style={[
           styles.statusWrap, 
@@ -119,52 +168,52 @@ export default function MyPropertiesScreen() {
             styles.statusText, 
             { color: item.status === 'Active' ? '#10B981' : '#F59E0B' }
           ]}>
-            ● {item.status}
+            ● {item.status || 'Active'}
           </Text>
         </View>
       </View>
 
-      <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.title}</Text>
-      <Text style={[styles.cardLocation, { color: colors.textSecondary }]}>📍 {item.location}</Text>
+      <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.title || item.buildingName || item.bhk || 'Property Listing'}</Text>
+      <Text style={[styles.cardLocation, { color: colors.textSecondary }]}>📍 {item.location || item.locality || 'Unknown Location'}</Text>
       
-      <Text style={styles.cardPrice}>{item.price}</Text>
+      <Text style={styles.cardPrice}>{formatPrice(item.price || '₹0')}</Text>
 
       <View style={[styles.cardFooter, { borderTopColor: Brand.blueBorder }]}>
         <View style={styles.statsRow}>
-          <Text style={[styles.statText, { color: colors.textDim }]}>👁️ {item.views} views</Text>
-          <Text style={[styles.statText, { color: colors.textDim }]}>🤝 {item.matches} matches</Text>
+          <Text style={[styles.statText, { color: colors.textDim }]}>👁️ {item.views || 0} {t('myProperties.views')}</Text>
+          <Text style={[styles.statText, { color: colors.textDim }]}>🤝 {item.matches || item.leads || 0} {t('myProperties.matches')}</Text>
         </View>
         
-        <TouchableOpacity style={styles.editBtn} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.editBtn} activeOpacity={0.7} onPress={() => navigation.navigate('AddProperty', { editId: item.id || item.listingId, initialData: item })}>
           <MaterialCommunityIcons name="pencil-outline" size={18} color={Brand.teal} />
-          <Text style={[styles.editBtnText, { color: Brand.teal }]}>Edit</Text>
+          <Text style={[styles.editBtnText, { color: Brand.teal }]}>{t('myProperties.edit')}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 
-  const renderRequirementCard = (item: RequirementItem) => (
-    <View key={item.id} style={[styles.card, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+  const renderRequirementCard = (item: any) => (
+    <View key={item.id || Math.random().toString()} style={[styles.card, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
       <View style={styles.cardHeader}>
-        <Text style={styles.reqBadge}>CLIENT REQUIREMENT</Text>
+        <Text style={styles.reqBadge}>{t('myProperties.clientReq')}</Text>
         <View style={[
           styles.statusWrap, 
           { backgroundColor: 'rgba(16,185,129,0.15)' }
         ]}>
-          <Text style={[styles.statusText, { color: '#10B981' }]}>● {item.status}</Text>
+          <Text style={[styles.statusText, { color: '#10B981' }]}>● {item.status || 'Active'}</Text>
         </View>
       </View>
 
-      <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.lookingFor}</Text>
-      <Text style={[styles.cardLocation, { color: colors.textSecondary }]}>📍 {item.location}</Text>
+      <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.description || item.lookingFor || 'Requirement'}</Text>
+      <Text style={[styles.cardLocation, { color: colors.textSecondary }]}>📍 {item.locality || item.location || 'Unknown Location'}</Text>
       
-      <Text style={[styles.cardPrice, { color: Brand.teal }]}>Budget: {item.budget}</Text>
+      <Text style={[styles.cardPrice, { color: Brand.teal }]}>{t('myProperties.budget')} {formatPrice(item.budget || item.budgetMax || 'N/A')}</Text>
 
       <View style={[styles.cardFooter, { borderTopColor: Brand.blueBorder }]}>
-        <Text style={[styles.statText, { color: Brand.blue }]}>🤝 {item.matchesFound} potential matches found</Text>
-        <TouchableOpacity style={styles.editBtn} activeOpacity={0.7}>
+        <Text style={[styles.statText, { color: Brand.blue }]}>🤝 {item.matchesFound || 0} {t('myProperties.matches')}</Text>
+        <TouchableOpacity style={styles.editBtn} activeOpacity={0.7} onPress={() => navigation.navigate('AddRequirement', { editId: item.id, initialData: item })}>
           <MaterialCommunityIcons name="pencil-outline" size={18} color={Brand.teal} />
-          <Text style={[styles.editBtnText, { color: Brand.teal }]}>Edit</Text>
+          <Text style={[styles.editBtnText, { color: Brand.teal }]}>{t('myProperties.edit')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -203,13 +252,50 @@ export default function MyPropertiesScreen() {
                 end={{ x: 1, y: 0 }}
                 style={styles.actionBtnGrad}
               >
-                <Text style={styles.actionBtnText}>+ Property</Text>
+                <Text style={styles.actionBtnText}>{t('myProperties.addPropertyBtn')}</Text>
               </LinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={handleAddRequirement} activeOpacity={0.8} style={[styles.actionBtnOutline, { borderColor: Brand.teal }]}>
-              <Text style={[styles.actionBtnOutlineText, { color: Brand.teal }]}>+ Requirement</Text>
+              <Text style={[styles.actionBtnOutlineText, { color: Brand.teal }]}>{t('myProperties.addRequirementBtn')}</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ── Rental / Buy-Sell Toggle Row ── */}
+        <View style={[styles.toggleRow, { backgroundColor: colors.navy }]}>
+          <View style={[styles.modeToggle, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+            {[
+              { key: 'Rentals', label: t('dashboard.rental'), emoji: '🔑' },
+              { key: 'Buying', label: t('dashboard.buySell'), emoji: '🏠' },
+            ].map(({ key, label, emoji }) => {
+              const active = sectionType === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  onPress={() => setSectionType(key as any)}
+                  activeOpacity={0.8}
+                  style={styles.modeBtn}
+                >
+                  {active ? (
+                    <LinearGradient
+                      colors={[Brand.blue, Brand.teal]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.modeBtnGrad}
+                    >
+                      <Text style={styles.modeBtnEmoji}>{emoji}</Text>
+                      <Text style={[styles.modeBtnText, { color: '#FFFFFF' }]}>{label}</Text>
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.modeBtnInner}>
+                      <Text style={styles.modeBtnEmoji}>{emoji}</Text>
+                      <Text style={[styles.modeBtnText, { color: colors.textSecondary }]}>{label}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
@@ -217,7 +303,7 @@ export default function MyPropertiesScreen() {
         <View style={[styles.tabsRow, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}>
           {(['Properties', 'Requirements'] as const).map(tab => {
             const active = activeTab === tab;
-            const count = tab === 'Properties' ? MOCK_MY_PROPERTIES.length : MOCK_MY_REQUIREMENTS.length;
+            const count = tab === 'Properties' ? properties.length : requirements.length;
             return (
               <TouchableOpacity
                 key={tab}
@@ -230,7 +316,7 @@ export default function MyPropertiesScreen() {
                   { color: active ? colors.textPrimary : colors.textDim }, 
                   active && { fontWeight: '700' }
                 ]}>
-                  My {tab}{' '}
+                  {tab === 'Properties' ? t('myProperties.title') : (t('myProperties.clientReq'))}{' '}
                   <Text style={[styles.tabCount, active && { color: Brand.teal }]}>
                     ({count})
                   </Text>
@@ -249,11 +335,30 @@ export default function MyPropertiesScreen() {
         </View>
 
         {/* ── Lists ── */}
-        <ScrollView contentContainerStyle={styles.listContainer} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          contentContainerStyle={styles.listContainer} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={activeTab === 'Properties' ? loadingProp : loadingReq}
+              onRefresh={activeTab === 'Properties' ? fetchProperties : fetchRequirements}
+              tintColor={Brand.teal}
+              colors={[Brand.teal]}
+            />
+          }
+        >
           {activeTab === 'Properties' ? (
-            MOCK_MY_PROPERTIES.map(renderPropertyCard)
+            properties.length > 0 ? properties.map(renderPropertyCard) : (
+              <Text style={{ textAlign: 'center', marginTop: 20, color: colors.textSecondary }}>
+                {loadingProp ? 'Loading listings...' : t('myProperties.noProperties')}
+              </Text>
+            )
           ) : (
-            MOCK_MY_REQUIREMENTS.map(renderRequirementCard)
+            requirements.length > 0 ? requirements.map(renderRequirementCard) : (
+              <Text style={{ textAlign: 'center', marginTop: 20, color: colors.textSecondary }}>
+                {loadingReq ? 'Loading...' : t('myProperties.noRequirements')}
+              </Text>
+            )
           )}
           <View style={styles.footerSpacer} />
         </ScrollView>
@@ -420,4 +525,20 @@ const styles = StyleSheet.create({
   footerSpacer: {
     height: 40,
   },
+  toggleRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  // Mode toggle
+  modeToggle: {
+    flexDirection: 'row',
+    borderRadius: 12, borderWidth: 1,
+    overflow: 'hidden', gap: 2, padding: 2,
+  },
+  modeBtn: { borderRadius: 10, overflow: 'hidden' },
+  modeBtnGrad: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 6 },
+  modeBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 6 },
+  modeBtnEmoji: { fontSize: 12 },
+  modeBtnText: { fontSize: 12, fontWeight: '600' },
 });

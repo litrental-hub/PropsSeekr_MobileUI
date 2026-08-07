@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { BottomSheet } from '../../components/BottomSheet';
 import { PurchaseBottomSheet } from './components/PurchaseBottomSheet';
 import { UnlockBottomSheet } from './components/UnlockBottomSheet';
 import { ContactRevealedModal } from './components/ContactRevealedModal';
+import { getUnlockedMatches } from '../../api/matches';
 
 export default function CreditsScreen() {
   const { colors, isDark } = useAppTheme();
@@ -28,6 +29,18 @@ export default function CreditsScreen() {
   const [purchasePack, setPurchasePack] = useState<any>(null);
   const [unlockVisible, setUnlockVisible] = useState(false);
   const [revealedVisible, setRevealedVisible] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [unlockedItems, setUnlockedItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    getUnlockedMatches()
+      .then(items => {
+        if (items && items.length > 0) {
+          setUnlockedItems(items);
+        }
+      })
+      .catch(err => console.log('Failed to fetch unlocked matches history:', err?.message));
+  }, []);
 
   const handleBuy = (pack: any) => {
     setPurchasePack(pack);
@@ -70,7 +83,7 @@ export default function CreditsScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft} />
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{t('credits.title')}</Text>
-          <TouchableOpacity style={styles.headerRight} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.headerRight} activeOpacity={0.7} onPress={() => setHistoryVisible(true)}>
             <Text style={styles.historyText}>{t('credits.history')}</Text>
           </TouchableOpacity>
         </View>
@@ -144,6 +157,21 @@ export default function CreditsScreen() {
                 <Text style={[styles.exampleText, { color: '#92400E' }]} numberOfLines={1} adjustsFontSizeToFit>e.g. ₹65L → 2 cr</Text>
               </View>
             </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />
+
+            <TouchableOpacity style={styles.ruleRow} activeOpacity={0.8} onPress={handleUnlockMock}>
+              <View style={[styles.iconCircle, { backgroundColor: '#FEE2E2' }]}>
+                <Text style={styles.emoji}>🔓</Text>
+              </View>
+              <View style={styles.ruleCenter}>
+                <Text style={[styles.ruleTitle, { color: colors.textPrimary }]}>{t('credits.unlockDemo')}</Text>
+                <Text style={styles.ruleSub}>{t('credits.unlockDemoSub')}</Text>
+              </View>
+              <View style={[styles.examplePill, { backgroundColor: '#D1FAE5' }]}>
+                <Text style={[styles.exampleText, { color: '#065F46' }]} numberOfLines={1} adjustsFontSizeToFit>1 token</Text>
+              </View>
+            </TouchableOpacity>
           </View>
 
           {/* SECTION 3 - BUY CREDITS PACKS */}
@@ -199,31 +227,35 @@ export default function CreditsScreen() {
             })}
           </View>
 
-          {/* SECTION 4 - RECENT TRANSACTIONS */}
-          <Text style={[styles.sectionLabel, { color: colors.textDim }]}>{t('credits.recentActivity')}</Text>
-          <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: colors.borderFaint, borderWidth: 1 }]}>
-            {TRANSACTIONS.map((txn, index) => (
-              <React.Fragment key={txn.id}>
-                {index > 0 && <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />}
-                <View style={styles.txnRow}>
-                  <View style={[styles.iconCircle, { backgroundColor: txn.iconBg }]}>
-                    <Text style={styles.emoji}>{txn.emoji}</Text>
-                  </View>
-                  <View style={styles.txnCenter}>
-                    <Text style={[styles.txnTitle, { color: colors.textPrimary }]}>{txn.title}</Text>
-                    <Text style={styles.txnSub}>{txn.sub}</Text>
-                  </View>
-                  <View style={styles.txnRight}>
-                    <Text style={[styles.txnAmount, { color: txn.amountColor }]}>{txn.amount}</Text>
-                    <Text style={styles.txnDate}>{txn.date}</Text>
-                  </View>
-                </View>
-              </React.Fragment>
-            ))}
-            <TouchableOpacity style={styles.historyLink} activeOpacity={0.7} onPress={handleUnlockMock}>
-              <Text style={styles.historyLinkText}>{t('credits.fullHistory')}</Text>
-            </TouchableOpacity>
-          </View>
+          {/* SECTION 4 - RECENT TRANSACTIONS (Hidden for now, can be re-enabled later) */}
+          {false && (
+            <>
+              <Text style={[styles.sectionLabel, { color: colors.textDim }]}>{t('credits.recentActivity')}</Text>
+              <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: colors.borderFaint, borderWidth: 1 }]}>
+                {TRANSACTIONS.map((txn, index) => (
+                  <React.Fragment key={txn.id}>
+                    {index > 0 && <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />}
+                    <View style={styles.txnRow}>
+                      <View style={[styles.iconCircle, { backgroundColor: txn.iconBg }]}>
+                        <Text style={styles.emoji}>{txn.emoji}</Text>
+                      </View>
+                      <View style={styles.txnCenter}>
+                        <Text style={[styles.txnTitle, { color: colors.textPrimary }]}>{txn.title}</Text>
+                        <Text style={styles.txnSub}>{txn.sub}</Text>
+                      </View>
+                      <View style={styles.txnRight}>
+                        <Text style={[styles.txnAmount, { color: txn.amountColor }]}>{txn.amount}</Text>
+                        <Text style={styles.txnDate}>{txn.date}</Text>
+                      </View>
+                    </View>
+                  </React.Fragment>
+                ))}
+                <TouchableOpacity style={styles.historyLink} activeOpacity={0.7} onPress={() => setHistoryVisible(true)}>
+                  <Text style={styles.historyLinkText}>{t('credits.fullHistory')}</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
 
           {/* Safe padding for bottom nav */}
           <View style={{ height: 40 }} />
@@ -248,6 +280,42 @@ export default function CreditsScreen() {
         visible={revealedVisible}
         onClose={() => setRevealedVisible(false)}
       />
+
+      <BottomSheet visible={historyVisible} onClose={() => setHistoryVisible(false)}>
+        <Text style={[styles.historyModalTitle, { color: colors.textPrimary }]}>{t('credits.historyModalTitle')}</Text>
+        <ScrollView style={{ maxHeight: 350, marginVertical: 12 }}>
+          {(unlockedItems.length > 0 ? unlockedItems.map((item, idx) => ({
+            id: item.id || `unlocked-${idx}`,
+            emoji: '🔓',
+            iconBg: Brand.amberLight,
+            title: item.title || item.propertyTitle || item.category || 'Unlocked Broker Contact',
+            sub: item.brokerName ? `${item.brokerName} (${item.mobileNumber || item.phone || ''})` : 'Contact Revealed (1 Token debit)',
+            amount: '-1 token',
+            amountColor: '#DC2626',
+            date: item.createdAt || item.unlockedAt ? new Date(item.createdAt || item.unlockedAt).toLocaleDateString() : 'Recent'
+          })) : TRANSACTIONS).map((txn, index) => (
+            <React.Fragment key={`hist-${txn.id}`}>
+              {index > 0 && <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />}
+              <View style={styles.txnRow}>
+                <View style={[styles.iconCircle, { backgroundColor: txn.iconBg }]}>
+                  <Text style={styles.emoji}>{txn.emoji}</Text>
+                </View>
+                <View style={styles.txnCenter}>
+                  <Text style={[styles.txnTitle, { color: colors.textPrimary }]}>{txn.title}</Text>
+                  <Text style={styles.txnSub}>{txn.sub}</Text>
+                </View>
+                <View style={styles.txnRight}>
+                  <Text style={[styles.txnAmount, { color: txn.amountColor }]}>{txn.amount}</Text>
+                  <Text style={styles.txnDate}>{txn.date}</Text>
+                </View>
+              </View>
+            </React.Fragment>
+          ))}
+        </ScrollView>
+        <TouchableOpacity style={styles.closeHistoryBtn} onPress={() => setHistoryVisible(false)}>
+          <Text style={styles.closeHistoryBtnText}>{t('credits.close')}</Text>
+        </TouchableOpacity>
+      </BottomSheet>
 
     </View>
   );
@@ -387,4 +455,7 @@ const styles = StyleSheet.create({
   txnDate: { fontSize: 11, color: '#9CA3AF' },
   historyLink: { marginTop: 16, alignItems: 'center' },
   historyLinkText: { fontSize: 13, color: Brand.teal, fontWeight: '500' },
+  historyModalTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center', marginBottom: 16 },
+  closeHistoryBtn: { height: 48, backgroundColor: Brand.teal, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  closeHistoryBtnText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
 });

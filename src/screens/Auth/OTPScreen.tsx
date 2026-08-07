@@ -14,7 +14,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
-import { sendEmailOTP, verifyEmailOTP } from '../../api/auth';
+import { sendEmailOTP, verifyEmailOTP, sendOTP, verifyOTP, resendOTP } from '../../api/auth';
 import { useAuthStore } from '../../store/authStore';
 
 export default function OTPScreen() {
@@ -23,8 +23,10 @@ export default function OTPScreen() {
   const { colors, type } = useAppTheme();
   const setAuth = useAuthStore(s => s.setAuth);
   
-  // Accept email address from previous screen
-  const emailAddress = route.params?.email || route.params?.phone || '';
+  // Accept phone or email from previous screen
+  const phone = route.params?.phone || '';
+  const emailAddress = route.params?.email || '';
+  const targetIdentifier = phone || emailAddress || '';
   
   const [otp, setOtp] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -38,9 +40,13 @@ export default function OTPScreen() {
 
     try {
       setIsLoading(true);
-      const response = await verifyEmailOTP({ email: emailAddress, otp, purpose: 'EmailVerification' });
-      
-      Alert.alert('Verified', response.message || 'Email verified successfully.');
+      if (phone) {
+        const response = await verifyOTP({ mobileNumber: phone, otpCode: otp });
+        Alert.alert('Verified', response.message || 'Mobile number verified successfully.');
+      } else {
+        const response = await verifyEmailOTP({ email: emailAddress, otp, purpose: 'EmailVerification' });
+        Alert.alert('Verified', response.message || 'Email verified successfully.');
+      }
       navigation.navigate('Login');
     } catch (error: any) {
       console.error('Verify OTP Error:', error);
@@ -51,15 +57,20 @@ export default function OTPScreen() {
   };
 
   const handleResendOTP = async () => {
-    if (!emailAddress) {
-      Alert.alert('Error', 'Email address is missing.');
+    if (!targetIdentifier) {
+      Alert.alert('Error', 'Contact identifier is missing.');
       return;
     }
 
     try {
       setIsResending(true);
-      const response = await sendEmailOTP({ email: emailAddress, purpose: 'EmailVerification' });
-      Alert.alert('OTP Resent', response.message || 'OTP has been resent successfully.');
+      if (phone) {
+        const response = await resendOTP({ mobileNumber: phone });
+        Alert.alert('OTP Resent', response.message || 'OTP has been resent successfully to your mobile.');
+      } else {
+        const response = await sendEmailOTP({ email: emailAddress, purpose: 'EmailVerification' });
+        Alert.alert('OTP Resent', response.message || 'OTP has been resent successfully.');
+      }
     } catch (error: any) {
       console.error('Resend OTP Error:', error);
       Alert.alert('Failed to resend', error.response?.data?.message || 'Something went wrong.');
@@ -103,7 +114,7 @@ export default function OTPScreen() {
             <Text style={[styles.headline, { color: colors.textPrimary }]}>Verify OTP</Text>
             <Text style={[styles.sub, { color: colors.textSecondary }]}>
               Enter the code sent to{'\n'}
-              <Text style={{ fontWeight: 'bold', color: colors.textPrimary }}>{emailAddress || 'your email'}</Text>
+              <Text style={{ fontWeight: 'bold', color: colors.textPrimary }}>{targetIdentifier || 'your email'}</Text>
             </Text>
           </View>
 

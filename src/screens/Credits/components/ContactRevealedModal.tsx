@@ -2,6 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Animated } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAppTheme } from '../../../theme/useAppTheme';
+import { useTranslation } from 'react-i18next';
+import { useAppStore } from '../../../store/appStore';
 
 interface ContactRevealedModalProps {
   visible: boolean;
@@ -10,6 +12,8 @@ interface ContactRevealedModalProps {
 
 export function ContactRevealedModal({ visible, onClose }: ContactRevealedModalProps) {
   const { colors } = useAppTheme();
+  const { t } = useTranslation();
+  const creditsBalance = useAppStore(s => s.creditsBalance);
   const scaleAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -34,8 +38,8 @@ export function ContactRevealedModal({ visible, onClose }: ContactRevealedModalP
           <MaterialCommunityIcons name="check" size={40} color="#10B981" />
         </Animated.View>
 
-        <Text style={[styles.title, { color: colors.textPrimary }]}>Contact Unlock Ho Gaya!</Text>
-        <Text style={[styles.sub, { color: colors.textSecondary }]}>Ab directly baat karo</Text>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>{t('unlock.successTitle', 'Contact Unlocked!')}</Text>
+        <Text style={[styles.sub, { color: colors.textSecondary }]}>{t('unlock.successSub', 'You can now contact directly')}</Text>
 
         <View style={[styles.card, { backgroundColor: colors.cardBg }]}>
           <View style={styles.avatarRow}>
@@ -44,7 +48,7 @@ export function ContactRevealedModal({ visible, onClose }: ContactRevealedModalP
             </View>
             <View>
               <Text style={[styles.name, { color: colors.textPrimary }]}>Rajesh Sharma</Text>
-              <Text style={styles.role}>Property Owner</Text>
+              <Text style={styles.role}>{t('unlock.role', 'Property Owner')}</Text>
             </View>
           </View>
 
@@ -57,22 +61,22 @@ export function ContactRevealedModal({ visible, onClose }: ContactRevealedModalP
 
           <View style={styles.contactRow}>
             <Text style={styles.contactEmoji}>💬</Text>
-            <Text style={[styles.contactValue, { color: '#25D366' }]}>WhatsApp available</Text>
+            <Text style={[styles.contactValue, { color: '#25D366' }]}>{t('unlock.waAvailable', 'WhatsApp available')}</Text>
           </View>
         </View>
 
         <TouchableOpacity style={styles.callBtn} activeOpacity={0.8}>
-          <Text style={styles.callBtnText}>📞 Call Now</Text>
+          <Text style={styles.callBtnText}>{t('unlock.callNow', '📞 Call Now')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.waBtn} activeOpacity={0.8}>
-          <Text style={styles.waBtnText}>💬 WhatsApp Karo</Text>
+          <Text style={styles.waBtnText}>{t('unlock.waBtn', '💬 WhatsApp Now')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.footerText}>1 token spent · 7 tokens remaining</Text>
+        <Text style={styles.footerText}>{t('unlock.footerText', { remaining: creditsBalance, defaultValue: `1 token spent · ${creditsBalance} tokens remaining` })}</Text>
 
         <TouchableOpacity onPress={onClose} style={styles.backLink}>
-          <Text style={styles.backLinkText}>Listing pe wapas jao →</Text>
+          <Text style={styles.backLinkText}>{t('unlock.backLink', 'Back to listing →')}</Text>
         </TouchableOpacity>
 
       </View>

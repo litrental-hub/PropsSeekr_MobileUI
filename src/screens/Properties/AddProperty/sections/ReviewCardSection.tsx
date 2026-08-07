@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAddPropertyForm } from '../AddPropertyContext';
@@ -7,14 +7,20 @@ import { useAppTheme, Brand } from '../../../../theme/useAppTheme';
 import { useNavigation } from '@react-navigation/native';
 import { FormInput } from '../../../../components/forms/FormInput';
 import { useTranslation } from 'react-i18next';
+import { addListing } from '../../../../api/property';
+import { useAuthStore } from '../../../../store/authStore';
+import Geolocation from '@react-native-community/geolocation';
+import { requestLocationPermissions } from '../../../../utils/location';
 
 export function ReviewCardSection({ themeColor, setStep }: { themeColor: string, setStep: (step: number) => void }) {
   const { state, updateState } = useAddPropertyForm();
   const { colors, isDark } = useAppTheme();
   const navigation = useNavigation();
   const { t } = useTranslation();
+  const user = useAuthStore(s => s.user);
   
   const [expandMissing, setExpandMissing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Formatting helpers
   const title = `${state.bhk ? state.bhk + ' ' : ''}${state.propertyType || 'Property'} — ${state.areaLocality || 'Unknown Area'}, ${state.city}`;
@@ -56,12 +62,119 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
     { key: 'maintenanceCharges', label: 'Maintenance Charges', value: state.maintenanceCharges },
   ].filter(f => !f.value);
 
-  const handleSubmit = () => {
-    Alert.alert(
-      t('reviewCard.successTitle'),
-      t('reviewCard.successMessage'),
-      [{ text: t('reviewCard.ok'), onPress: () => navigation.goBack() }]
-    );
+  const handleSubmit = async () => {
+    if (!state.transactionType || !state.propertyType || !state.areaLocality?.trim() || (state.transactionType === 'Rent' ? !state.monthlyRent : !state.salePrice)) {
+      Alert.alert(
+        'Incomplete Form',
+        'Please ensure Transaction Type, Property Type, Area/Locality, and Price/Rent are completed before submitting.',
+        [{ text: 'Go Back to Edit', onPress: () => setStep(1) }]
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    const hasPerm = await requestLocationPermissions();
+    if (!hasPerm) {
+      setIsSubmitting(false);
+      Alert.alert('Location Permission Required', 'Location access is required to attach valid GPS coordinates for automated property matchmaking. Please grant location access.');
+      return;
+    }
+
+    let lat = 0;
+    let lng = 0;
+    try {
+      const coords = await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+        Geolocation.getCurrentPosition(
+          (pos) => resolve(pos.coords),
+          (err) => reject(err),
+          { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+        );
+      });
+      lat = coords.latitude;
+      lng = coords.longitude;
+    } catch (err) {
+      setIsSubmitting(false);
+      Alert.alert('GPS Unavailable', 'Could not obtain valid GPS coordinates for radius matching. Please check your GPS settings and try again.');
+      return;
+    }
+
+    if (!lat || !lng || (lat === 0 && lng === 0)) {
+      setIsSubmitting(false);
+      Alert.alert('Invalid Coordinates', 'Obtained invalid GPS coordinates. Please verify your GPS signal and try again.');
+      return;
+    }
+
+    const priceNum = state.transactionType === 'Rent'
+      ? parseFloat(String(state.monthlyRent || '0').replace(/[^0-9.]/g, '')) || 0
+      : parseFloat(String(state.salePrice || '0').replace(/[^0-9.]/g, '')) || 0;
+
+    const areaNum = parseFloat(String(state.carpetArea || state.plotArea || state.superBuiltupArea || '1200').replace(/[^0-9.]/g, '')) || 1200;
+    const bedroomsNum = parseInt(state.bhk || String(state.numberOfBedrooms || 0), 10) || (state.bhk?.includes('1') ? 1 : state.bhk?.includes('2') ? 2 : state.bhk?.includes('3') ? 3 : state.bhk?.includes('4') ? 4 : 1);
+
+    const payload = {
+      ...state,
+      userId: user?.id || '4a35c4d2-6bc9-432c-97e8-2485664fab58',
+      title,
+      transactionType: state.transactionType === 'Rent' ? 'RENTAL' : 'BUY_SELL',
+      listingType: state.transactionType === 'Rent' ? 'RENTAL' : 'BUY_SELL',
+      type: state.transactionType === 'Rent' ? 'RENTAL' : 'BUY_SELL',
+      category: (state.propertyType === 'Office Space' || state.propertyType === 'Shop/Retail' || state.propertyType === 'Warehouse') ? 'Commercial' : 'Residential',
+      propertyType: state.propertyType,
+      price: priceNum,
+      askingPrice: priceNum,
+      priceNumeric: priceNum,
+      location: `${state.areaLocality || 'Indore'}, ${state.city || 'Indore'}`.replace(/^, /, ''),
+      locality: state.areaLocality || state.city || 'Unknown',
+      city: state.city || 'Indore',
+      latitude: lat,
+      longitude: lng,
+      lat,
+      lng,
+      bedrooms: bedroomsNum,
+      bathrooms: state.bathrooms || 1,
+      builtUpSize: areaNum,
+      areaSqFt: areaNum,
+      furnishing: state.furnishingStatus || 'Unfurnished',
+      description: state.additionalNotes || `${state.bhk || ''} ${state.propertyType} located in ${state.areaLocality || 'Indore'}.`,
+      images: [],
+      status: 'ACTIVE',
+    };
+
+    try {
+      await addListing(payload);
+      setIsSubmitting(false);
+      Alert.alert(
+        '✅ Property Listed Successfully!',
+        'Your property has been submitted to the inventory and automated matchmaking has begun.',
+        [
+          { 
+            text: 'View My Properties', 
+            onPress: () => {
+              navigation.navigate('MainTabs' as any, { screen: 'MyProperties' } as any);
+            } 
+          }
+        ]
+      );
+    } catch (err: any) {
+      setIsSubmitting(false);
+      let msg = 'Could not save property listing. Please try again.';
+      if (err.response?.data) {
+        const data = err.response.data;
+        if (typeof data === 'string') {
+          msg = data;
+        } else if (data.errors && typeof data.errors === 'object') {
+          const errList = Object.values(data.errors).flat().join('\n');
+          msg = errList || data.title || data.message || data.error || msg;
+        } else if (data.message || data.error || data.title) {
+          msg = data.message || data.error || data.title;
+        } else {
+          msg = JSON.stringify(data);
+        }
+      } else if (err.message) {
+        msg = err.message;
+      }
+      Alert.alert('❌ Submission Failed', msg);
+    }
   };
 
   return (
@@ -172,14 +285,18 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
           >
             <Text style={[styles.editBtnText, { color: colors.textPrimary }]}>{t('reviewCard.editBtn')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
+          <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} disabled={isSubmitting} activeOpacity={0.85}>
             <LinearGradient
               colors={[Brand.blue, Brand.teal]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.submitGrad}
             >
-              <Text style={styles.submitBtnText}>{t('reviewCard.submitBtn')}</Text>
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.submitBtnText}>{t('reviewCard.submitBtn')}</Text>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>

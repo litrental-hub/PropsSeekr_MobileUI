@@ -6,8 +6,13 @@ export interface RegisterPayload {
   mobile: string;
   email: string;
   password?: string;
-  aadharNumber?: string;
-  panCard?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  aadharNumber: string;
+  panCard: string;
   gstNumber?: string;
   reraRegistrationNumber?: string;
 }
@@ -85,3 +90,54 @@ export const verifyEmailOTP = async (data: VerifyEmailOTPPayload): Promise<Verif
   const response = await apiClient.post<VerifyEmailOTPResponse>('/auth/verify-email-otp', data);
   return response.data;
 };
+
+// ── Mobile OTP ──────────────────────────────────────────────────────────
+export interface SendOTPPayload {
+  mobileNumber: string;
+}
+
+export interface SendOTPResponse {
+  success: boolean;
+  message: string;
+}
+
+export const sendOTP = async (data: SendOTPPayload): Promise<SendOTPResponse> => {
+  const response = await apiClient.post<SendOTPResponse>('/auth/send-otp', data);
+  return response.data;
+};
+
+export interface VerifyOTPPayload {
+  mobileNumber: string;
+  otpCode: string;
+}
+
+export interface VerifyOTPResponse {
+  success: boolean;
+  message: string;
+}
+
+export const verifyOTP = async (data: VerifyOTPPayload): Promise<VerifyOTPResponse> => {
+  const response = await apiClient.post<VerifyOTPResponse>('/auth/verify-otp', data);
+  return response.data;
+};
+
+export interface ResendOTPPayload {
+  mobileNumber: string;
+}
+
+export interface ResendOTPResponse {
+  success: boolean;
+  message: string;
+}
+
+export const resendOTP = async (data: ResendOTPPayload): Promise<ResendOTPResponse> => {
+  const response = await apiClient.post<ResendOTPResponse>('/auth/resend-otp', data);
+  return response.data;
+};
+
+// ── Logout ──────────────────────────────────────────────────────────────
+export const logout = async (): Promise<any> => {
+  const response = await apiClient.post('/auth/logout');
+  return response.data;
+};
+

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { BottomSheet } from '../../../components/BottomSheet';
 import { useAppTheme } from '../../../theme/useAppTheme';
 import { useAppStore } from '../../../store/appStore';
+import { useTranslation } from 'react-i18next';
 
 interface UnlockBottomSheetProps {
   visible: boolean;
@@ -12,14 +13,15 @@ interface UnlockBottomSheetProps {
 
 export function UnlockBottomSheet({ visible, onClose, onConfirm }: UnlockBottomSheetProps) {
   const { colors } = useAppTheme();
+  const { t } = useTranslation();
   const creditsBalance = useAppStore(s => s.creditsBalance);
   
   const cost = 1;
-  const newBalance = creditsBalance - cost;
+  const newBalance = Math.max(0, creditsBalance - cost);
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
-      <Text style={[styles.title, { color: colors.textPrimary }]}>Contact Unlock Karo</Text>
+      <Text style={[styles.title, { color: colors.textPrimary }]}>{t('unlock.title', 'Unlock Contact')}</Text>
       
       <View style={[styles.summaryCard, { borderColor: colors.borderFaint }]}>
         <Text style={[styles.listingTitle, { color: colors.textPrimary }]}>2BHK Flat · Vijay Nagar</Text>
@@ -27,29 +29,29 @@ export function UnlockBottomSheet({ visible, onClose, onConfirm }: UnlockBottomS
       </View>
 
       <View style={styles.costContainer}>
-        <Text style={styles.costValue}>{cost} token</Text>
-        <Text style={styles.costLabel}>unlock karne ke liye</Text>
+        <Text style={styles.costValue}>{t('unlock.costValue', '1 token')}</Text>
+        <Text style={styles.costLabel}>{t('unlock.costLabel', 'to unlock contact details')}</Text>
       </View>
 
       <View style={styles.balanceRow}>
-        <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>Aapka balance:</Text>
-        <Text style={[styles.balanceValue, { color: colors.textPrimary }]}>{creditsBalance} tokens</Text>
+        <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>{t('unlock.yourBalance', 'Your balance:')}</Text>
+        <Text style={[styles.balanceValue, { color: colors.textPrimary }]}>{creditsBalance} {t('unlock.tokens', 'tokens')}</Text>
       </View>
       <View style={styles.balanceRow}>
-        <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>New Balance</Text>
-        <Text style={[styles.balanceValue, { color: '#10B981' }]}>{newBalance} tokens</Text>
+        <Text style={[styles.balanceLabel, { color: colors.textSecondary }]}>{t('unlock.newBalance', 'New Balance')}</Text>
+        <Text style={[styles.balanceValue, { color: '#10B981' }]}>{newBalance} {t('unlock.tokens', 'tokens')}</Text>
       </View>
 
       {newBalance === 0 && (
-        <Text style={styles.warning}>⚠️ Yeh aapka last token hoga</Text>
+        <Text style={styles.warning}>{t('unlock.lastTokenWarning', '⚠️ This will use your last token')}</Text>
       )}
 
       <View style={styles.btnRow}>
         <TouchableOpacity style={[styles.cancelBtn, { borderColor: colors.borderFaint }]} onPress={onClose}>
-          <Text style={[styles.cancelText, { color: colors.textPrimary }]}>Cancel</Text>
+          <Text style={[styles.cancelText, { color: colors.textPrimary }]}>{t('unlock.cancel', 'Cancel')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.unlockBtn} onPress={onConfirm}>
-          <Text style={styles.unlockText}>Unlock Karo 🔓</Text>
+          <Text style={styles.unlockText}>{t('unlock.confirmBtn', 'Unlock Now 🔓')}</Text>
         </TouchableOpacity>
       </View>
     </BottomSheet>

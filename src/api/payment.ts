@@ -1,14 +1,21 @@
 import apiClient from './client';
 
 export interface CreateOrderPayload {
-  tierId: string;
+  packageId?: string;
+  tokenAmount?: number;
+  amountInRupees?: number;
+  tierId?: string;
+  [key: string]: any;
 }
 
 export interface CreateOrderResponse {
-  razorpayOrderId: string;
-  amountInPaise: number;
-  currency: string;
-  keyId: string;
+  razorpayOrderId?: string;
+  orderId?: string;
+  amountInPaise?: number;
+  amount?: number;
+  currency?: string;
+  keyId?: string;
+  [key: string]: any;
 }
 
 export const createOrder = async (data: CreateOrderPayload): Promise<CreateOrderResponse> => {
@@ -17,18 +24,32 @@ export const createOrder = async (data: CreateOrderPayload): Promise<CreateOrder
 };
 
 export interface VerifyPaymentPayload {
-  RazorpayOrderId: string;
-  RazorpayPaymentId: string;
-  RazorpaySignature: string;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
+  RazorpayOrderId?: string;
+  RazorpayPaymentId?: string;
+  RazorpaySignature?: string;
+  [key: string]: any;
 }
 
 export interface VerifyPaymentResponse {
-  success: boolean;
-  message: string;
-  newBalance: number;
+  success?: boolean;
+  status?: string;
+  message?: string;
+  newBalance?: number;
+  creditsBalance?: number;
+  [key: string]: any;
 }
 
 export const verifyPayment = async (data: VerifyPaymentPayload): Promise<VerifyPaymentResponse> => {
-  const response = await apiClient.post<VerifyPaymentResponse>('/payment/verify', data);
+  const payload = {
+    razorpayOrderId: data.razorpayOrderId || data.RazorpayOrderId,
+    razorpayPaymentId: data.razorpayPaymentId || data.RazorpayPaymentId,
+    razorpaySignature: data.razorpaySignature || data.RazorpaySignature,
+    ...data,
+  };
+  const response = await apiClient.post<VerifyPaymentResponse>('/payment/verify', payload);
   return response.data;
 };
+

@@ -19,6 +19,7 @@ import WebView from 'react-native-webview';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAppStore } from '../../store/appStore';
 import { detectCurrentLocation, forwardGeocode, reverseGeocode } from '../../utils/location';
+import { useTranslation } from 'react-i18next';
 
 const RADIUS_OPTIONS = [2, 5, 10, 15, 25];
 
@@ -26,6 +27,7 @@ export default function SearchScreen() {
   const navigation = useNavigation();
   const { colors, isDark } = useAppTheme();
   const { location, setLocation } = useAppStore();
+  const { t } = useTranslation();
 
   const [lat, setLat] = useState(location.lat || 22.7533);
   const [lng, setLng] = useState(location.lng || 75.8937);
@@ -166,7 +168,7 @@ export default function SearchScreen() {
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
             <MaterialCommunityIcons name="arrow-left" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Select Location on Map</Text>
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{t('searchScreen.selectLocation')}</Text>
           <TouchableOpacity onPress={handleDetectGPS} style={styles.gpsBtn} activeOpacity={0.7}>
             <MaterialCommunityIcons name="crosshairs-gps" size={22} color={Brand.teal} />
           </TouchableOpacity>
@@ -187,7 +189,7 @@ export default function SearchScreen() {
             {isLoading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
-              <Text style={styles.searchGoText}>Search</Text>
+              <Text style={styles.searchGoText}>{t('searchScreen.searchGo')}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -213,7 +215,7 @@ export default function SearchScreen() {
           {/* Floating GPS Target Trigger */}
           <TouchableOpacity style={styles.floatingGps} onPress={handleDetectGPS} activeOpacity={0.8}>
             <MaterialCommunityIcons name="crosshairs-gps" size={24} color="#FFFFFF" />
-            <Text style={styles.floatingGpsText}>Locate Me</Text>
+            <Text style={styles.floatingGpsText}>{t('searchScreen.locateMe')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -233,7 +235,7 @@ export default function SearchScreen() {
           </View>
 
           {/* Radius Selector Pills */}
-          <Text style={[styles.radiusLabel, { color: colors.textSecondary }]}>SEARCH RADIUS (KM)</Text>
+          <Text style={[styles.radiusLabel, { color: colors.textSecondary }]}>{t('searchScreen.radiusLabel')}</Text>
           <View style={styles.radiusPillsRow}>
             {RADIUS_OPTIONS.map((opt) => {
               const active = radiusKm === opt;
@@ -264,7 +266,7 @@ export default function SearchScreen() {
               end={{ x: 1, y: 0 }}
               style={styles.confirmGrad}
             >
-              <Text style={styles.confirmText}>Confirm Location & Radius →</Text>
+              <Text style={styles.confirmText}>{t('searchScreen.confirmBtn')}</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>

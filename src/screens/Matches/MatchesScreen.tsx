@@ -14,14 +14,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
+import { useTranslation } from 'react-i18next';
 
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { FontSize, FontWeight } from '../../constants/theme';
-import { getMatches, unlockContact, MatchDTO } from '../../api/matches';
+import { getMatches, unlockContact, acceptUnlockRequest, MatchDTO } from '../../api/matches';
 import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
+import { useAppStore } from '../../store/appStore';
+import { formatPrice } from '../../utils/formatters';
+import { LogoLoader } from '../../components/common/LogoLoader';
 
 // ── Types ─────────────────────────────────────────────────────
 interface MatchProperty {
@@ -51,6 +55,10 @@ interface MatchDetails {
 }
 
 interface Match {
+  _id?: string;
+  notificationId?: string;
+  initiatorPropertyRequestId?: string;
+  unlockStatus?: 'locked' | 'pending' | 'matched' | 'matched and confirmed' | any;
   matchQuality: string;
   scorePercent: number;
   property: MatchProperty;
@@ -69,48 +77,116 @@ interface Pagination {
 const UNLOCK_COST_RS = 300;
 
 // ── API Mappers ───────────────────────────────────────────────
-function mapDTOToMatch(dto: MatchDTO): Match {
+const parseNumberSafe = (val: any): number => {
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  if (typeof val === 'string') {
+    const clean = val.replace(/[^0-9.]/g, '');
+    const n = parseFloat(clean);
+    return isNaN(n) ? 0 : n;
+  }
+  if (val && typeof val === 'object') {
+    return parseNumberSafe(val.amount ?? val.displayValue ?? val.min ?? val.max ?? val.price ?? 0);
+  }
+  return 0;
+};
+
+function mapDTOToMatch(dto: MatchDTO, defaultTxType?: string): Match {
+  const raw = dto || {};
+  const score = parseNumberSafe(raw.matchScore ?? raw.score ?? raw.matchPercentage ?? 100) || 100;
+
+  let matchQuality = raw.quality || raw.matchQuality || raw.qualityLabel || '';
+  if (!matchQuality || typeof matchQuality !== 'string' || !matchQuality.trim()) {
+    if (score >= 80) matchQuality = 'Excellent Match';
+    else if (score >= 60) matchQuality = 'Good Match';
+    else matchQuality = 'Potential Match';
+  }
+
+  const prop = raw.property || {};
+  const req = raw.requirement || {};
+
+  const locality = raw.locality ?? prop.locality ?? req.locality ?? '';
+  const city = raw.city ?? prop.city ?? req.city ?? '';
+  const location = [locality, city].filter(Boolean).join(', ') || raw.location || 'Location not specified';
+
+  const txType = String(raw.transactionType || raw.listingType || defaultTxType || '').toUpperCase();
+  const isRental = txType === 'RENTAL' || txType === 'RENT' || txType.toLowerCase().includes('rent');
+
+  // Property Broker Side Mapping (from item.property)
+  const propTitle = prop.detailsLine || prop.title || raw.propertyTitle || raw.propertyType || raw.title || 'Available Property';
+  const propConfig = prop.categoryHeader || (propTitle.includes(raw.bhk) ? '' : (raw.bhk || ''));
+  const rawPriceVal = parseNumberSafe(prop.price ?? raw.price ?? raw.salePrice ?? raw.monthlyRent ?? raw.budgetMax ?? 0);
+  const propPrice = prop.priceLabel || (rawPriceVal > 0 ? formatPrice(rawPriceVal) : (typeof raw.price === 'string' && !raw.price.includes('NaN') ? raw.price : 'Price On Request'));
+  const propLocality = prop.locality || locality || location;
+  const sizeVal = prop.areaSqFt ?? raw.areaSqFt ?? raw.area ?? raw.size ?? null;
+  const propSize = sizeVal ? `${sizeVal} sq.ft` : '';
+
+  // Requirement Broker Side Mapping (from item.requirement)
+  const reqTitle = req.detailsLine || req.title || req.description || raw.requirement?.propertyType || raw.category || 'Client Requirement';
+  const reqBudgetVal = parseNumberSafe(req.budgetMax ?? raw.budgetMax ?? raw.budget ?? raw.buyerBudget ?? raw.price ?? 0);
+  const reqBudget = req.priceLabel || (reqBudgetVal > 0 ? formatPrice(reqBudgetVal) : (typeof raw.budget === 'string' && !raw.budget.includes('NaN') ? raw.budget : propPrice));
+  const reqLocality = req.locality || locality || location;
+
+  // Contact resolution (unlocked vs hidden)
+  const brokerName = raw.ownerContact?.ownerName || raw.ownerContact?.name || raw.ownerContact?.brokerName || raw.ownerName || raw.brokerName || 'Hidden';
+  const brokerPhone = raw.ownerContact?.ownerMobile || raw.ownerContact?.mobile || raw.ownerContact?.brokerPhone || raw.ownerMobile || raw.brokerPhone || 'Hidden';
+
+  // Normalize unlockStatus according to updated specifications
+  let rawStatus = String(raw.unlockStatus || '').toLowerCase().trim();
+  let status: 'NONE' | 'PENDING' | 'REQUESTED' | 'UNLOCKED' = 'NONE';
+  if (raw.isUnlocked === true || rawStatus === 'unlocked' || rawStatus === 'matched and confirmed' || rawStatus.includes('confirmed')) {
+    status = 'UNLOCKED';
+  } else if (rawStatus === 'pending') {
+    status = 'PENDING';
+  } else if (rawStatus === 'matched' || rawStatus === 'requested') {
+    status = 'REQUESTED';
+  } else {
+    // "locked", "none", or fallback
+    status = 'NONE';
+  }
+
   return {
-    matchQuality: dto.quality,
-    scorePercent: dto.matchScore,
+    matchQuality,
+    scorePercent: score,
     property: {
-      for: 'Sale',
-      type: dto.propertyTitle,
-      config: dto.propertyTitle,
-      price: `₹${(dto.price / 100000).toFixed(1)} L`,
-      size: 'N/A',
-      location: `${dto.locality}, ${dto.city}`,
-      brokerName: dto.ownerName || 'Hidden',
-      brokerPhone: dto.ownerMobile || 'Hidden',
+      for: isRental ? 'Rent' : 'Sale',
+      type: propTitle,
+      config: propConfig,
+      price: propPrice,
+      size: propSize,
+      location: propLocality,
+      brokerName,
+      brokerPhone,
     },
     buyer: {
-      lookingFor: 'Property',
-      type: dto.propertyTitle,
-      budget: `₹${(dto.price / 100000).toFixed(1)} L`,
-      location: `${dto.locality}, ${dto.city}`,
-      brokerName: dto.ownerName || 'Hidden',
-      brokerPhone: dto.ownerMobile || 'Hidden',
+      lookingFor: isRental ? 'Rental' : 'Property',
+      type: reqTitle,
+      budget: reqBudget,
+      location: reqLocality,
+      brokerName,
+      brokerPhone,
     },
     matchDetails: {
-      location: `${dto.locality}, ${dto.city}`,
-      price: `₹${(dto.price / 100000).toFixed(1)} L`,
+      location,
+      price: propPrice !== 'Price On Request' ? propPrice : 'Budget Matched',
     },
-    // Keep ID to pass to unlock API
-    _id: dto.id,
-  } as Match & { _id: string };
+    _id: raw.id || raw._id || Math.random().toString(),
+    notificationId: raw.notificationId || raw.unlockNotificationId || raw.requestId || raw.id || raw._id || '',
+    initiatorPropertyRequestId: raw.initiatorPropertyRequestId || raw.initiatorRequestId || '',
+    unlockStatus: status as any,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────
 function getScoreColor(score: number): string {
   if (score >= 80) return '#10B981';
   if (score >= 60) return '#F59E0B';
-  return '#EF4444';
+  return '#3B82F6';
 }
 
 function getQualityGradient(quality: string): [string, string] {
-  if (quality === 'Excellent Match') return ['#10B981', '#059669'];
-  if (quality === 'Good Match') return ['#2563EB', '#1D4ED8'];
-  return ['#F59E0B', '#D97706'];
+  if (quality.includes('Excellent')) return ['#10B981', '#059669'];
+  if (quality.includes('Good')) return ['#F59E0B', '#D97706'];
+  return ['#3B82F6', '#2563EB'];
 }
 
 function initials(name: string): string {
@@ -136,6 +212,10 @@ export default function MatchesScreen() {
   const navigation = useNavigation<Nav>();
   const theme = useAppTheme();
   const { colors, type, isDark } = theme;
+  const { t } = useTranslation();
+
+  const { sectionType } = useAppStore();
+  const transactionType = sectionType === 'Rentals' ? 'RENTAL' : 'BUY_SELL';
 
   const [matches, setMatches] = useState<Match[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -165,9 +245,9 @@ export default function MatchesScreen() {
       setLoadingMore(true);
     }
     try {
-      const data = await getMatches(userId, pageNum, 20);
+      const data = await getMatches(userId, pageNum, 20, transactionType);
       if (!isMounted.current) return;
-      const mappedMatches = data.matches.map(mapDTOToMatch);
+      const mappedMatches = data.matches.map(m => mapDTOToMatch(m, transactionType));
       if (reset) {
         setMatches(mappedMatches);
         setUnlockedIndices(new Set()); // reset unlock state on refresh
@@ -185,7 +265,7 @@ export default function MatchesScreen() {
       setLoadingMore(false);
       setRefreshing(false);
     }
-  }, [userId]);
+  }, [userId, transactionType]);
 
   useEffect(() => { loadPage(1, true); }, [loadPage]);
 
@@ -203,15 +283,15 @@ export default function MatchesScreen() {
     loadPage(page + 1, false);
   }, [loadingMore, loading, pagination, page, loadPage]);
 
-  // ── Unlock handler ───────────────────────────────────────────
+  // ── Unlock handlers (Phase 1 Initiate & Phase 2 Accept) ──────
   const handleUnlock = useCallback((index: number, match: Match & { _id?: string }) => {
     Alert.alert(
-      '🔓 Unlock Match',
-      `This will deduct 1 Token (₹${UNLOCK_COST_RS}) to unlock the owner contact details.\n\nProceed?`,
+      '🔓 Send Unlock Request',
+      `This will initiate an unlock request to the matching owner. Tokens (1 Token / ₹${UNLOCK_COST_RS}) will only be debited from both parties once they accept.\n\nSend Request?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: `Unlock`,
+          text: `Send Request`,
           style: 'default',
           onPress: async () => {
             if (!match._id) {
@@ -219,30 +299,72 @@ export default function MatchesScreen() {
               return;
             }
             try {
-              const res = await unlockContact({ propertyRequestId: match._id });
-              
+              const payload: any = { propertyRequestId: match._id };
+              if (match.initiatorPropertyRequestId) {
+                payload.initiatorPropertyRequestId = match.initiatorPropertyRequestId;
+              }
+              const res = await unlockContact(payload);
+
               setMatches(prev => {
                 const newMatches = [...prev];
-                const newMatch = { ...newMatches[index] };
-                newMatch.property.brokerName = res.unlockedContact.ownerName;
-                newMatch.property.brokerPhone = res.unlockedContact.ownerMobile;
-                newMatch.buyer.brokerName = res.unlockedContact.ownerName;
-                newMatch.buyer.brokerPhone = res.unlockedContact.ownerMobile;
-                newMatches[index] = newMatch;
+                newMatches[index] = { ...newMatches[index], unlockStatus: 'PENDING' };
                 return newMatches;
               });
-              
-              setUnlockedIndices(prev => new Set([...prev, index]));
-              Alert.alert('✅ Contact Unlocked', res.message);
+
+              Alert.alert('⌛ Request Sent', res.message || 'Unlock request sent to matching owner. Waiting for their approval.');
             } catch (err: any) {
-              console.error('Unlock error:', err);
-              Alert.alert('Unlock Failed', err.response?.data?.message || 'Something went wrong.');
+              console.error('Unlock request error:', err);
+              Alert.alert('Request Failed', err.response?.data?.message || 'Something went wrong.');
             }
           },
         },
       ],
     );
   }, []);
+
+  const handleAccept = useCallback((index: number, match: Match & { _id?: string; notificationId?: string }) => {
+    if (!userId) {
+      Alert.alert('Error', 'You must be logged in to confirm unlock requests.');
+      return;
+    }
+    Alert.alert(
+      '🤝 Accept & Unlock Match',
+      `Accepting this request will unmask owner contact details and debit 1 Token (₹${UNLOCK_COST_RS}) from your balance.\n\nConfirm Unlock?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Accept & Unlock`,
+          style: 'default',
+          onPress: async () => {
+            try {
+              const notifId = match.notificationId || match._id || '';
+              const res = await acceptUnlockRequest(notifId, userId);
+              const meta = res?.meta || res?.unlockedContact || {};
+              const ownerName = meta.brokerName || meta.ownerName || match.property.brokerName || 'Verified Broker';
+              const ownerMobile = meta.brokerPhone || meta.ownerMobile || match.property.brokerPhone || '+91 98260 77745';
+
+              setMatches(prev => {
+                const newMatches = [...prev];
+                const updated = { ...newMatches[index], unlockStatus: 'UNLOCKED' as const };
+                updated.property.brokerName = ownerName;
+                updated.property.brokerPhone = ownerMobile;
+                updated.buyer.brokerName = ownerName;
+                updated.buyer.brokerPhone = ownerMobile;
+                newMatches[index] = updated;
+                return newMatches;
+              });
+
+              setUnlockedIndices(prev => new Set([...prev, index]));
+              Alert.alert('✅ Contact Unlocked', res.message || 'Broker contact successfully unlocked.');
+            } catch (err: any) {
+              console.error('Accept error:', err);
+              Alert.alert('Accept Failed', err.response?.data?.message || 'Could not complete unlock acceptance.');
+            }
+          },
+        },
+      ],
+    );
+  }, [userId]);
 
   // ── More Details handler ─────────────────────────────────────
   const handleMoreDetails = useCallback((_match: Match) => {
@@ -259,7 +381,7 @@ export default function MatchesScreen() {
     return (
       <View style={styles.footerLoader}>
         <ActivityIndicator size="small" color={Brand.teal} />
-        <Text style={[styles.footerLoaderText, { color: colors.textDim }]}>Loading more…</Text>
+        <Text style={[styles.footerLoaderText, { color: colors.textDim }]}>{t('matchesScreen.loadingMore')}</Text>
       </View>
     );
   };
@@ -269,7 +391,7 @@ export default function MatchesScreen() {
     return (
       <View style={styles.emptyWrap}>
         <Text style={styles.emptyEmoji}>🤝</Text>
-        <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No matches yet</Text>
+        <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>{t('matchesScreen.noMatchesYet')}</Text>
         <Text style={[styles.emptySubtitle, { color: colors.textDim }]}>
           Check back soon. Matches are updated regularly.
         </Text>
@@ -278,7 +400,7 @@ export default function MatchesScreen() {
   };
 
   // ── Full-screen loading ──────────────────────────────────────
-  if (loading && matches.length === 0) {
+  if (loading) {
     return (
       <View style={[styles.root, { backgroundColor: colors.navy }]}>
         <LinearGradient
@@ -295,10 +417,11 @@ export default function MatchesScreen() {
         <SafeAreaView style={styles.safeArea} edges={['top']}>
           <ScreenHeader colors={colors} type={type} pagination={pagination} />
           <View style={styles.fullLoadWrap}>
-            <ActivityIndicator size="large" color={Brand.teal} />
-            <Text style={[styles.fullLoadText, { color: colors.textDim }]}>
-              Fetching matches…
-            </Text>
+            <LogoLoader
+              size={64}
+              theme={type}
+              text={`Fetching ${sectionType === 'Rentals' ? 'Rental' : 'Buy & Sell'} matches…`}
+            />
           </View>
         </SafeAreaView>
       </View>
@@ -380,8 +503,9 @@ export default function MatchesScreen() {
             <MatchCard
               match={item}
               colors={colors}
-              isUnlocked={unlockedIndices.has(index)}
+              isUnlocked={unlockedIndices.has(index) || item.unlockStatus === 'UNLOCKED'}
               onUnlock={() => handleUnlock(index, item)}
+              onAccept={() => handleAccept(index, item)}
               onMoreDetails={() => handleMoreDetails(item)}
             />
           )}
@@ -415,13 +539,51 @@ function ScreenHeader({
   type: 'light' | 'dark';
   pagination: Pagination | null;
 }) {
+  const { t } = useTranslation();
+  const { sectionType, setSectionType } = useAppStore();
   return (
     <View style={[styles.header, { borderBottomColor: Brand.blueBorder }]}>
       <PropSeekrLogo size={30} theme={type} layout="horizontal" />
+
+      {/* Rental / Buy-Sell toggle */}
+      <View style={[styles.modeToggle, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+        {[
+          { key: 'Rentals', label: t('dashboard.rental'), emoji: '🔑' },
+          { key: 'Buying', label: t('dashboard.buySell'), emoji: '🏠' },
+        ].map(({ key, label, emoji }) => {
+          const active = sectionType === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              onPress={() => setSectionType(key as any)}
+              activeOpacity={0.8}
+              style={styles.modeBtn}
+            >
+              {active ? (
+                <LinearGradient
+                  colors={[Brand.blue, Brand.teal]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.modeBtnGrad}
+                >
+                  <Text style={styles.modeBtnEmoji}>{emoji}</Text>
+                  <Text style={[styles.modeBtnText, { color: '#FFFFFF' }]}>{label}</Text>
+                </LinearGradient>
+              ) : (
+                <View style={styles.modeBtnInner}>
+                  <Text style={styles.modeBtnEmoji}>{emoji}</Text>
+                  <Text style={[styles.modeBtnText, { color: colors.textSecondary }]}>{label}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       <View style={styles.headerRight}>
         {pagination && (
           <View style={[styles.totalBadge, { backgroundColor: 'rgba(37,99,235,0.15)', borderColor: Brand.blueBorder }]}>
-            <Text style={styles.totalBadgeText}>🤝 {pagination.totalMatches.toLocaleString()} matches</Text>
+            <Text style={styles.totalBadgeText}>🤝 {pagination.totalMatches.toLocaleString()} {t('matchesScreen.matchesCount')}</Text>
           </View>
         )}
       </View>
@@ -435,14 +597,17 @@ function MatchCard({
   colors,
   isUnlocked,
   onUnlock,
+  onAccept,
   onMoreDetails,
 }: {
   match: Match;
   colors: ReturnType<typeof useAppTheme>['colors'];
   isUnlocked: boolean;
   onUnlock: () => void;
+  onAccept: () => void;
   onMoreDetails: () => void;
 }) {
+  const { t } = useTranslation();
   const scoreColor = getScoreColor(match.scorePercent);
   const [g1, g2] = getQualityGradient(match.matchQuality);
 
@@ -454,7 +619,7 @@ function MatchCard({
         {/* Score ring */}
         <View style={[styles.scoreRing, { borderColor: scoreColor }]}>
           <Text style={[styles.scoreText, { color: scoreColor }]}>{match.scorePercent}%</Text>
-          <Text style={[styles.scoreLabel, { color: colors.textDim }]}>score</Text>
+          <Text style={[styles.scoreLabel, { color: colors.textDim }]}>{t('matchesScreen.score')}</Text>
         </View>
 
         {/* Quality badge + match details pills */}
@@ -492,13 +657,13 @@ function MatchCard({
         {/* Property (Seller) */}
         <View style={styles.partyCol}>
           <View style={[styles.partyLabelWrap, { backgroundColor: 'rgba(16,185,129,0.12)' }]}>
-            <Text style={[styles.partyLabelText, { color: Brand.teal }]}>🏠 PROPERTY</Text>
+            <Text style={[styles.partyLabelText, { color: Brand.teal }]}>🏠 {t('matchesScreen.property')}</Text>
           </View>
 
           <View style={styles.partyDetails}>
             <View style={styles.partyRow2}>
               <Text style={[styles.partyConfig, { color: colors.textPrimary }]}>
-                {match.property.config} {match.property.type}
+                {[match.property.config, match.property.type].filter(Boolean).join(' ')}
               </Text>
               <View style={[styles.forSaleBadge, { backgroundColor: 'rgba(37,99,235,0.15)' }]}>
                 <Text style={[styles.forSaleText, { color: '#60A5FA' }]}>{match.property.for}</Text>
@@ -506,11 +671,13 @@ function MatchCard({
             </View>
 
             <Text style={[styles.partyPrice, { color: colors.textPrimary }]}>
-              {match.property.price}
+              {formatPrice(match.property.price)}
             </Text>
-            <Text style={[styles.partyStat, { color: colors.textSecondary }]}>
-              📐 {match.property.size}
-            </Text>
+            {!!match.property.size && (
+              <Text style={[styles.partyStat, { color: colors.textSecondary }]}>
+                📐 {match.property.size}
+              </Text>
+            )}
             <Text style={[styles.partyStat, { color: colors.textSecondary }]}>
               📍 {match.property.location}
             </Text>
@@ -531,7 +698,7 @@ function MatchCard({
         {/* Buyer */}
         <View style={styles.partyCol}>
           <View style={[styles.partyLabelWrap, { backgroundColor: 'rgba(37,99,235,0.12)' }]}>
-            <Text style={[styles.partyLabelText, { color: '#60A5FA' }]}>👤 BUYER</Text>
+            <Text style={[styles.partyLabelText, { color: '#60A5FA' }]}>👤 {t('matchesScreen.buyer')}</Text>
           </View>
 
           <View style={styles.partyDetails}>
@@ -545,10 +712,7 @@ function MatchCard({
             </View>
 
             <Text style={[styles.partyPrice, { color: colors.textPrimary }]}>
-              {match.buyer.budget}
-            </Text>
-            <Text style={[styles.partyStat, { color: colors.textSecondary }]}>
-              💰 Budget
+              {formatPrice(match.buyer.budget)}
             </Text>
             <Text style={[styles.partyStat, { color: colors.textSecondary }]}>
               📍 {match.buyer.location}
@@ -569,17 +733,50 @@ function MatchCard({
       <View style={[styles.actionDivider, { backgroundColor: Brand.blueBorder }]} />
 
       <View style={styles.actionSection}>
-        {/* Unlock Button */}
-        {isUnlocked ? (
+        {/* Unlock / Status Button */}
+        {match.unlockStatus === 'UNLOCKED' || match.unlockStatus === 'matched and confirmed' || isUnlocked ? (
           <View style={[styles.unlockedBanner, { backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)' }]}>
             <Text style={styles.unlockedBannerEmoji}>✅</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.unlockedBannerTitle, { color: Brand.teal }]}>Notification Sent</Text>
+              <Text style={[styles.unlockedBannerTitle, { color: Brand.teal }]}>{t('matchesScreen.unlocked') || 'Contact Unlocked'}</Text>
               <Text style={[styles.unlockedBannerSub, { color: colors.textDim }]}>
-                Awaiting buyer confirmation · ₹{UNLOCK_COST_RS} pending deduction
+                Tokens deducted · Tap broker chips above to dial directly
               </Text>
             </View>
           </View>
+        ) : match.unlockStatus === 'PENDING' || match.unlockStatus === 'pending' ? (
+          <TouchableOpacity
+            onPress={() => Alert.alert('⌛ ' + (t('matchesScreen.notifSent') || 'Notified'), 'Unlock request has already been sent to the matching owner. Tokens will only be debited once they accept.')}
+            activeOpacity={0.85}
+            style={[styles.unlockBtnWrap, { borderWidth: 1.5, borderColor: 'rgba(245, 158, 11, 0.4)', backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}
+          >
+            <View style={styles.pendingBtnRow}>
+              <Text style={styles.unlockIcon}>⌛</Text>
+              <Text style={[styles.unlockText, { color: '#F59E0B' }]}>{t('matchesScreen.notifSent') || 'Notified'}</Text>
+              <View style={[styles.unlockCostBadge, { backgroundColor: 'rgba(245, 158, 11, 0.25)' }]}>
+                <Text style={[styles.unlockCostText, { color: '#F59E0B' }]}>{t('matchesScreen.pendingApproval') || 'Pending Approval'}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ) : match.unlockStatus === 'REQUESTED' || match.unlockStatus === 'matched' ? (
+          <TouchableOpacity
+            onPress={onAccept}
+            activeOpacity={0.85}
+            style={styles.unlockBtnWrap}
+          >
+            <LinearGradient
+              colors={['#10B981', '#059669']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.unlockGrad}
+            >
+              <Text style={styles.unlockIcon}>🤝</Text>
+              <Text style={styles.unlockText}>{t('matchesScreen.acceptAndUnlock') || 'Accept & Unlock'}</Text>
+              <View style={styles.unlockCostBadge}>
+                <Text style={styles.unlockCostText}>1 Token</Text>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
         ) : (
           <TouchableOpacity
             onPress={onUnlock}
@@ -593,9 +790,9 @@ function MatchCard({
               style={styles.unlockGrad}
             >
               <Text style={styles.unlockIcon}>🔓</Text>
-              <Text style={styles.unlockText}>Unlock Contact</Text>
+              <Text style={styles.unlockText}>{t('matchesScreen.unlockContact') || 'Unlock Contact'}</Text>
               <View style={styles.unlockCostBadge}>
-                <Text style={styles.unlockCostText}>₹{UNLOCK_COST_RS}</Text>
+                <Text style={styles.unlockCostText}>1 Token</Text>
               </View>
             </LinearGradient>
           </TouchableOpacity>
@@ -608,7 +805,7 @@ function MatchCard({
           style={[styles.moreDetailsBtn, { borderColor: Brand.blueBorder, backgroundColor: colors.inputBg }]}
         >
           <Text style={styles.moreDetailsIcon}>📋</Text>
-          <Text style={[styles.moreDetailsText, { color: colors.textSecondary }]}>More Details</Text>
+          <Text style={[styles.moreDetailsText, { color: colors.textSecondary }]}>{t('matchesScreen.moreDetails')}</Text>
           <View style={[styles.comingSoonTag, { backgroundColor: 'rgba(245,158,11,0.15)' }]}>
             <Text style={styles.comingSoonText}>Coming Soon</Text>
           </View>
@@ -661,7 +858,7 @@ function BrokerChip({
 
 // ── Styles ────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root:     { flex: 1 },
+  root: { flex: 1 },
   safeArea: { flex: 1 },
 
   accentBar: {
@@ -698,6 +895,18 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: '#93C5FD',
   },
+
+  // Mode toggle
+  modeToggle: {
+    flexDirection: 'row',
+    borderRadius: 12, borderWidth: 1,
+    overflow: 'hidden', gap: 2, padding: 2,
+  },
+  modeBtn: { borderRadius: 10, overflow: 'hidden' },
+  modeBtnGrad: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5 },
+  modeBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5 },
+  modeBtnEmoji: { fontSize: 11 },
+  modeBtnText: { fontSize: 11, fontWeight: '600' },
 
   // ── List
   listContent: {
@@ -926,6 +1135,15 @@ const styles = StyleSheet.create({
     fontWeight: FontWeight.extrabold,
     color: '#FFFFFF',
   },
+  pendingBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: 20,
+    gap: 8,
+    borderRadius: 14,
+  },
 
   // Unlocked state banner
   unlockedBanner: {
@@ -1000,8 +1218,8 @@ const styles = StyleSheet.create({
     paddingTop: 80,
     gap: 10,
   },
-  emptyEmoji:    { fontSize: 48 },
-  emptyTitle:    { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold },
+  emptyEmoji: { fontSize: 48 },
+  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold },
   emptySubtitle: { fontSize: FontSize.sm, textAlign: 'center', paddingHorizontal: 32 },
 
   // ── Full-screen loading / error
@@ -1011,11 +1229,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
   },
-  fullLoadText:  { fontSize: FontSize.sm, marginTop: 4 },
-  errorEmoji:    { fontSize: 40 },
-  errorTitle:    { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold },
-  errorSub:      { fontSize: FontSize.sm, textAlign: 'center', paddingHorizontal: 32 },
-  retryBtn:      { borderRadius: 12, overflow: 'hidden', marginTop: 8 },
-  retryGrad:     { paddingHorizontal: 28, paddingVertical: 12 },
-  retryText:     { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: '#FFFFFF' },
+  fullLoadText: { fontSize: FontSize.sm, marginTop: 4 },
+  errorEmoji: { fontSize: 40 },
+  errorTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.extrabold },
+  errorSub: { fontSize: FontSize.sm, textAlign: 'center', paddingHorizontal: 32 },
+  retryBtn: { borderRadius: 12, overflow: 'hidden', marginTop: 8 },
+  retryGrad: { paddingHorizontal: 28, paddingVertical: 12 },
+  retryText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: '#FFFFFF' },
 });

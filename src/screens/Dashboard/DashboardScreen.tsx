@@ -7,22 +7,50 @@ import {
   TouchableOpacity,
   TextInput,
   StatusBar,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useTranslation } from 'react-i18next';
 
 import { useAppStore } from '../../store/appStore';
 import { useAuthStore } from '../../store/authStore';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
+import { LogoLoader } from '../../components/common/LogoLoader';
 import { BottomSheet } from '../../components/BottomSheet';
 import { detectCurrentLocation, requestLocationPermissions } from '../../utils/location';
+import { searchProperties, getMyListings, uploadBulkTxtFile } from '../../api/property';
+import { getMatches } from '../../api/matches';
+import { pick, types, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+const mapApiToProperty = (item: any, isRental: boolean, mock: any) => ({
+  id: item.id || item.propertyRequestId || item.listingId || Math.random().toString(),
+  title: item.title || item.propertyTitle || item.buildingName || `${item.bhk || '2BHK'} ${item.propertyType || item.category || 'Flat'}`,
+  subtitle: `${item.locality || item.city || 'Indore'} · ${item.category || item.propertyType || 'Residential'}`,
+  badge: item.status || 'AVAILABLE',
+  badgeType: item.category || 'Residential',
+  freshLabel: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Active Listing',
+  kiraya: item.price !== undefined ? (typeof item.price === 'number' ? `₹${item.price.toLocaleString('en-IN')}/mo` : `₹${item.price}/mo`) : (typeof item.askingPrice === 'number' ? `₹${item.askingPrice.toLocaleString('en-IN')}/mo` : (typeof item.expectedPrice === 'number' ? `₹${item.expectedPrice.toLocaleString('en-IN')}/mo` : '₹14,000/mo')),
+  kirayaBuySell: item.price !== undefined ? (typeof item.price === 'number' ? `₹${(item.price / 100000).toFixed(2)}L` : `₹${item.price}`) : (typeof item.askingPrice === 'number' ? `₹${(item.askingPrice / 100000).toFixed(2)}L` : (typeof item.expectedPrice === 'number' ? `₹${(item.expectedPrice / 100000).toFixed(2)}L` : '₹52L')),
+  area: item.builtUpSize ? `${item.builtUpSize} sqft` : (item.areaSqFt ? `${item.areaSqFt} sqft` : '950 sqft'),
+  available: item.availableFrom || 'Immediate',
+  features: Array.isArray(item.features) && item.features.length > 0 ? item.features : mock.features,
+  preferences: Array.isArray(item.preferences) && item.preferences.length > 0 ? item.preferences : mock.preferences,
+  locationLabel: item.locationLabel || `${item.locality || 'Nearby'} · PropSeekr Network`,
+  isNearby: item.isNearby !== undefined ? item.isNearby : true,
+  brokerInitials: item.brokerInitials || (item.brokerName || item.ownerName || 'VB').slice(0, 2).toUpperCase(),
+  brokerName: item.brokerName || item.ownerName || 'Verified Broker',
+  brokerSub: item.brokerSub || `${item.locality || item.city || 'PropSeekr'} · Network`,
+  unlockCost: item.unlockCost !== undefined ? item.unlockCost : 1,
+});
 
 // ── Mock Data ────────────────────────────────────────────────
 const BHK_FILTERS = ['Sab', '1BHK', '2BHK', '3BHK', 'Commercial', 'Plot', 'Villa'];
@@ -70,6 +98,7 @@ export default function DashboardScreen() {
   const navigation = useNavigation<Nav>();
   const { creditsBalance, sectionType, setSectionType, location, setLocation } = useAppStore();
   const user = useAuthStore(s => s.user);
+  const { t } = useTranslation();
   
   const theme = useAppTheme();
   const { colors, type, isDark } = theme;
@@ -93,11 +122,113 @@ export default function DashboardScreen() {
   const [selectedBHK, setSelectedBHK] = useState('Sab');
   const [activeTab, setActiveTab] = useState<'Available' | 'Looking'>('Available');
   const [isFilterVisible, setIsFilterVisible] = useState(false);
+  const [isActionsVisible, setIsActionsVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allProperties, setAllProperties] = useState<any[]>([]);
+  const [apiProperties, setApiProperties] = useState<any[]>([]);
+  const [availableCount, setAvailableCount] = useState<number | null>(null);
+  const [lookingCount, setLookingCount] = useState<number | null>(null);
+  const [searching, setSearching] = useState(false);
+  const authUser = useAuthStore(s => s.user);
 
   const isRental = sectionType === 'Rentals';
-  const tabCounts = isRental
-    ? { Available: 84, Looking: 43 }
-    : { Available: 156, Looking: 72 };
+  const tabCounts = {
+    Available: availableCount ?? (isRental ? 84 : 156),
+    Looking: lookingCount ?? (isRental ? 43 : 72),
+  };
+
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    if (!text.trim()) {
+      setApiProperties(allProperties);
+      return;
+    }
+    const q = text.toLowerCase().trim();
+    const filtered = allProperties.filter(p => {
+      const target = [p.title, p.subtitle, p.badge, p.badgeType, p.locationLabel, p.brokerName, p.kiraya, p.kirayaBuySell]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return target.includes(q);
+    });
+    setApiProperties(filtered);
+  };
+
+  const fetchProperties = async (query?: string) => {
+    try {
+      setSearching(true);
+      const payload = {
+        latitude: location.lat || 19.1136,
+        longitude: location.lng || 72.8697,
+        radiusKm: location.radiusKm || 10.0,
+        transactionType: isRental ? 'RENTAL' : 'BUY_SELL',
+        category: selectedBHK !== 'Sab' && selectedBHK !== 'Commercial' ? 'Residential' : (selectedBHK === 'Commercial' ? 'Commercial' : 'Residential'),
+        page: 1,
+        limit: 20,
+        query: query !== undefined ? query : searchQuery,
+      };
+
+      const results: any[] = [];
+      try {
+        const searchRes = await searchProperties(payload);
+        if (typeof searchRes.availableCount === 'number') setAvailableCount(searchRes.availableCount);
+        else if (typeof searchRes.activeCount === 'number') setAvailableCount(searchRes.activeCount);
+        else if (typeof searchRes.totalCount === 'number') setAvailableCount(searchRes.totalCount);
+
+        if (typeof searchRes.lookingCount === 'number') setLookingCount(searchRes.lookingCount);
+
+        const searchItems = searchRes.results || searchRes.data || (Array.isArray(searchRes) ? searchRes : []);
+        searchItems.forEach((it: any) => results.push(mapApiToProperty(it, isRental, MOCK_PROPERTY)));
+      } catch (err) {}
+
+      try {
+        const matchRes: any = await getMatches(authUser?.id || '3030be5f-703c-448d-aebb-33960f9d8f4e', 1, 30);
+        const matchItems = matchRes.results || (Array.isArray(matchRes) ? matchRes : []);
+        matchItems.forEach((it: any) => results.push(mapApiToProperty(it, isRental, MOCK_PROPERTY)));
+      } catch (err) {}
+
+      try {
+        const myRes: any = await getMyListings();
+        const myItems = Array.isArray(myRes) ? myRes : (myRes?.data || myRes?.listings || []);
+        myItems.forEach((it: any) => results.push(mapApiToProperty(it, isRental, MOCK_PROPERTY)));
+      } catch (err) {}
+
+      // Deduplicate by title & locality
+      const seen = new Set();
+      const uniqueList = results.filter(item => {
+        const key = item.title + '|' + item.subtitle;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      const listToUse = uniqueList.length > 0 ? uniqueList : [MOCK_PROPERTY];
+      setAllProperties(listToUse);
+
+      const q = (query !== undefined ? query : searchQuery).toLowerCase().trim();
+      if (!q) {
+        setApiProperties(listToUse);
+      } else {
+        setApiProperties(listToUse.filter(p => {
+          const target = [p.title, p.subtitle, p.badge, p.badgeType, p.locationLabel, p.brokerName, p.kiraya, p.kirayaBuySell]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return target.includes(q);
+        }));
+      }
+    } catch (err) {
+      console.log('Property search API error on home page:', err);
+      setAllProperties([MOCK_PROPERTY]);
+      setApiProperties([MOCK_PROPERTY]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProperties();
+  }, [location.lat, location.lng, sectionType, selectedBHK]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.navy }]}>
@@ -127,8 +258,8 @@ export default function DashboardScreen() {
           {/* Rental / Buy-Sell toggle */}
           <View style={[styles.modeToggle, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
             {[
-              { key: 'Rentals',  label: 'Rental',   emoji: '🔑' },
-              { key: 'Buying',   label: 'Buy/Sell',  emoji: '🏠' },
+              { key: 'Rentals',  label: t('dashboard.rental'),   emoji: '🔑' },
+              { key: 'Buying',   label: t('dashboard.buySell'),  emoji: '🏠' },
             ].map(({ key, label, emoji }) => {
               const active = sectionType === key;
               return (
@@ -185,7 +316,7 @@ export default function DashboardScreen() {
               </Text>
             </View>
           </View>
-          <Text style={styles.changeBtn}>Change →</Text>
+          <Text style={styles.changeBtn}>{t('dashboard.change')}</Text>
         </TouchableOpacity>
 
         <ScrollView
@@ -198,9 +329,13 @@ export default function DashboardScreen() {
               <Text style={styles.searchIcon}>🔍</Text>
               <TextInput
                 style={[styles.searchInput, { color: colors.textPrimary }]}
-                placeholder="Area, property type, budget..."
+                placeholder={t('dashboard.searchPlaceholder')}
                 placeholderTextColor={colors.textDim}
-                editable={false}
+                editable={true}
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                onSubmitEditing={() => fetchProperties()}
+                returnKeyType="search"
               />
             </View>
             <TouchableOpacity 
@@ -216,7 +351,7 @@ export default function DashboardScreen() {
               >
                 <Text style={styles.filterIcon}>☰</Text>
                 <Text style={styles.filterText}>
-                  {selectedBHK !== 'Sab' ? selectedBHK : 'Filter'}
+                  {selectedBHK !== 'Sab' ? selectedBHK : t('dashboard.filter')}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -234,7 +369,7 @@ export default function DashboardScreen() {
                   activeOpacity={0.75}
                 >
                   <Text style={[styles.tabText, { color: active ? colors.textPrimary : colors.textDim }, active && { fontWeight: '700' }]}>
-                    {tab}{' '}
+                    {tab === 'Available' ? t('dashboard.available') : t('dashboard.looking')}{' '}
                     <Text style={[styles.tabCount, active && { color: Brand.teal }]}>
                       {tabCounts[tab]}
                     </Text>
@@ -254,19 +389,31 @@ export default function DashboardScreen() {
 
           {/* ── "AAPKE AAS-PAAS" Section ── */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>AAPKE AAS-PAAS</Text>
+            <Text style={styles.sectionTitle}>{t('dashboard.nearby')}</Text>
             <Text style={[styles.sectionSub, { color: colors.textDim }]}>Vijay Nagar · 1.2 km</Text>
           </View>
 
           {/* ── Property Card ── */}
-          <PropertyCard property={MOCK_PROPERTY} isRental={isRental} theme={theme} />
+          {searching ? (
+            <LogoLoader size={56} theme={type} text={`Loading ${isRental ? 'Rental' : 'Buy & Sell'} properties…`} />
+          ) : apiProperties.length > 0 ? (
+            apiProperties.map((prop, idx) => (
+              <View key={`searched-${idx}`} style={{ marginBottom: 12 }}>
+                <PropertyCard property={prop} isRental={isRental} theme={theme} />
+              </View>
+            ))
+          ) : (
+            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+              <Text style={{ color: colors.textDim, fontSize: 15 }}>{t('dashboard.noMatches')} "{searchQuery}"</Text>
+            </View>
+          )}
 
 
-          <View style={styles.footerSpacing} />
+          <View style={{ height: 40 }} />
         </ScrollView>
 
         {/* ── FAB (+ button) ── */}
-        <TouchableOpacity style={styles.fab} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.fab} activeOpacity={0.85} onPress={() => setIsActionsVisible(true)}>
           <LinearGradient
             colors={[Brand.blue, Brand.teal]}
             start={{ x: 0, y: 0 }}
@@ -276,6 +423,95 @@ export default function DashboardScreen() {
             <Text style={styles.fabIcon}>+</Text>
           </LinearGradient>
         </TouchableOpacity>
+
+        <BottomSheet visible={isActionsVisible} onClose={() => setIsActionsVisible(false)}>
+          <View style={styles.filterSheetContent}>
+            <Text style={[styles.filterSheetTitle, { color: colors.textPrimary }]}>{t('dashboard.quickActions')}</Text>
+            <View style={{ gap: 12 }}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.actionCardRow, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
+                onPress={() => {
+                  setIsActionsVisible(false);
+                  navigation.navigate('AddProperty' as any, {});
+                }}
+              >
+                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(16,185,129,0.15)' }]}>
+                  <MaterialCommunityIcons name="home-plus" size={26} color={Brand.teal} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionCardTitle, { color: colors.textPrimary }]}>{t('dashboard.addProperty')}</Text>
+                  <Text style={[styles.actionCardSub, { color: colors.textDim }]}>List a new property for sale or rent</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color={colors.textDim} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.actionCardRow, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
+                onPress={() => {
+                  setIsActionsVisible(false);
+                  navigation.navigate('AddRequirement' as any, {});
+                }}
+              >
+                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(37,99,235,0.15)' }]}>
+                  <MaterialCommunityIcons name="clipboard-text-outline" size={26} color={Brand.blue} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionCardTitle, { color: colors.textPrimary }]}>{t('dashboard.addRequirement')}</Text>
+                  <Text style={[styles.actionCardSub, { color: colors.textDim }]}>Post buyer or tenant requirements</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color={colors.textDim} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.actionCardRow, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
+                onPress={async () => {
+                  setIsActionsVisible(false);
+                  try {
+                    const res = await pick({
+                      type: [types.plainText, types.allFiles],
+                      allowMultiSelection: false,
+                    });
+                    const pickerResult = res?.[0];
+                    if (!pickerResult) return;
+
+                    const fileName = pickerResult.name || 'upload.txt';
+                    if (!fileName.toLowerCase().endsWith('.txt')) {
+                      Alert.alert('Validation Error', 'Invalid file type! Only .txt (plain text) files are permitted for bulk upload.');
+                      return;
+                    }
+
+                    if (!pickerResult.uri) {
+                      Alert.alert('Error', 'Unable to retrieve file path.');
+                      return;
+                    }
+
+                    Alert.alert('Uploading', `Uploading ${fileName}... Please wait.`);
+                    await uploadBulkTxtFile(pickerResult.uri, fileName);
+                    Alert.alert('Upload Successful 🎉', 'Your bulk file has been uploaded to AWS S3 successfully and scheduled for processing!');
+                  } catch (err: any) {
+                    if (isErrorWithCode(err) && err.code === errorCodes.OPERATION_CANCELED) {
+                      // User cancelled file selection
+                      return;
+                    }
+                    Alert.alert('Upload Failed', err?.message || 'An unexpected error occurred during file upload.');
+                  }
+                }}
+              >
+                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(245,158,11,0.15)' }]}>
+                  <MaterialCommunityIcons name="cloud-upload-outline" size={26} color="#F59E0B" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionCardTitle, { color: colors.textPrimary }]}>{t('dashboard.uploadFile')}</Text>
+                  <Text style={[styles.actionCardSub, { color: colors.textDim }]}>Bulk upload listings or requirement files (.txt only)</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color={colors.textDim} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </BottomSheet>
 
         <BottomSheet visible={isFilterVisible} onClose={() => setIsFilterVisible(false)}>
           <View style={styles.filterSheetContent}>
@@ -324,7 +560,7 @@ function PropertyCard({
   isRental,
   theme,
 }: {
-  property: typeof MOCK_PROPERTY;
+  property: any;
   isRental: boolean;
   theme: ReturnType<typeof useAppTheme>;
 }) {
@@ -368,7 +604,7 @@ function PropertyCard({
 
       {/* Features */}
       <View style={styles.featureRow}>
-        {property.features.map((f, i) => (
+        {(property.features || []).map((f: any, i: number) => (
           <View key={i} style={[styles.featureChip, { backgroundColor: colors.cardBgLight, borderColor: colors.borderFaint }]}>
             <Text style={styles.featureIcon}>{f.icon}</Text>
             <Text style={[styles.featureLabel, { color: colors.textSecondary }]}>{f.label}</Text>
@@ -379,7 +615,7 @@ function PropertyCard({
       {/* Owner Preferences */}
       <Text style={[styles.prefTitle, { color: colors.textDim }]}>OWNER PREFERENCES</Text>
       <View style={styles.prefRow}>
-        {property.preferences.map((p, i) => (
+        {(property.preferences || []).map((p: any, i: number) => (
           <View
             key={i}
             style={[
@@ -681,5 +917,30 @@ const styles = StyleSheet.create({
   },
   filterSheetOptionBtn: {
     marginBottom: 4,
+  },
+
+  // Quick Action Modal Styles
+  actionCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 14,
+  },
+  actionIconBox: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  actionCardSub: {
+    fontSize: 13,
+    marginTop: 2,
   },
 });

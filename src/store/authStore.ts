@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { storage } from '../utils/storage';
 import { STORAGE_KEYS } from '../constants';
+import { logout as logoutApi } from '../api/auth';
 
 interface User {
   id: string;
@@ -39,8 +40,18 @@ export const useAuthStore = create<AuthState>(set => {
   const storedPin = storage.getString(STORAGE_KEYS.APP_PIN) ?? null;
   const isAuth = !!storage.getString(STORAGE_KEYS.ACCESS_TOKEN);
 
+  let storedUser: User | null = null;
+  try {
+    const userJson = storage.getString(STORAGE_KEYS.USER_PROFILE);
+    if (userJson) {
+      storedUser = JSON.parse(userJson);
+    }
+  } catch (e) {
+    console.error('Error parsing stored user profile on boot:', e);
+  }
+
   return {
-    user: null,
+    user: storedUser,
     accessToken: storage.getString(STORAGE_KEYS.ACCESS_TOKEN) ?? null,
     isAuthenticated: isAuth,
     isLoading: false,
@@ -57,11 +68,20 @@ export const useAuthStore = create<AuthState>(set => {
     },
 
     updateUser: updates =>
-      set(state => ({
-        user: state.user ? { ...state.user, ...updates } : null,
-      })),
+      set(state => {
+        const newUser = state.user ? { ...state.user, ...updates } : null;
+        if (newUser) {
+          storage.set(STORAGE_KEYS.USER_PROFILE, JSON.stringify(newUser));
+        }
+        return { user: newUser };
+      }),
 
-    logout: () => {
+    logout: async () => {
+      try {
+        await logoutApi();
+      } catch (err) {
+        console.log('Server logout failed or network offline:', err);
+      }
       storage.remove(STORAGE_KEYS.ACCESS_TOKEN);
       storage.remove(STORAGE_KEYS.REFRESH_TOKEN);
       storage.remove(STORAGE_KEYS.USER_PROFILE);

@@ -67,7 +67,7 @@ class GlobalErrorBoundary extends Component<Props, State> {
             We encountered an unexpected runtime error instead of rendering the screen:
           </Text>
           <ScrollView style={styles.errorScroll} contentContainerStyle={styles.errorScrollContent}>
-            <Text style={styles.errorMessage}>{this.state.error?.toString() || 'Unknown Error'}</Text>
+            <Text style={styles.errorMessage}>{this.state.error?.message || 'Unknown Error'}</Text>
             {this.state.errorInfo && (
               <Text style={styles.errorStack}>{this.state.errorInfo.componentStack}</Text>
             )}
