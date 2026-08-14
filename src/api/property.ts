@@ -65,7 +65,7 @@ export interface AddListingResponse {
 }
 
 export const addListing = async (data: AddListingPayload): Promise<AddListingResponse> => {
-  const response = await apiClient.post<AddListingResponse>('/property-inventory/listings', data);
+  const response = await apiClient.post<AddListingResponse>('/listings', data);
   return response.data;
 };
 

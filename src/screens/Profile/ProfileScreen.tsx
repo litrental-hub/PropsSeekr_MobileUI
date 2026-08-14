@@ -41,6 +41,7 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 export default function ProfileScreen() {
   const logout = useAuthStore(s => s.logout);
   const { colors, type, isDark } = useAppTheme();
+  const user = useAuthStore(s => s.user);
   const { t, i18n } = useTranslation();
   const navigation = useNavigation<any>();
 
@@ -65,7 +66,7 @@ export default function ProfileScreen() {
     const fetchUserData = async () => {
       try {
         setLoading(true);
-        const profile = await getProfile();
+        const profile = await getProfile(user?.id || '');
         if (profile) {
           reset({
             name: profile.name || profile.fullName || 'Balaji G. Test',
@@ -89,12 +90,12 @@ export default function ProfileScreen() {
       }
     };
     fetchUserData();
-  }, [reset]);
+  }, [reset, user?.id]);
 
   const onSubmit = async (data: ProfileFormData) => {
     try {
       setSaving(true);
-      await updateProfile({
+      await updateProfile(user?.id || '', {
         name: data.name,
         fullName: data.name,
         email: data.email,
@@ -126,7 +127,7 @@ export default function ProfileScreen() {
 
       // Save updated photo to profile
       const currentValues = control._formValues;
-      await updateProfile({
+      await updateProfile(user?.id || '', {
         name: currentValues.name || 'User',
         email: currentValues.email || '',
         profilePhotoUrl: newUrl,

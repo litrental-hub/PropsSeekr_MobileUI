@@ -17,7 +17,7 @@ export interface RequirementPayload {
 }
 
 export const addRequirement = async (data: RequirementPayload) => {
-  const response = await apiClient.post('/requirements', data);
+  const response = await apiClient.post('/requirements/add', data);
   return response.data;
 };
 

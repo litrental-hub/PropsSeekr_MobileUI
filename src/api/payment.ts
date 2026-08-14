@@ -19,7 +19,7 @@ export interface CreateOrderResponse {
 }
 
 export const createOrder = async (data: CreateOrderPayload): Promise<CreateOrderResponse> => {
-  const response = await apiClient.post<CreateOrderResponse>('/payment/order', data);
+  const response = await apiClient.post<CreateOrderResponse>('/payments/initiate', data);
   return response.data;
 };
 

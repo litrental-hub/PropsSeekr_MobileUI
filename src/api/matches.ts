@@ -87,8 +87,8 @@ export const getMatches = async (userId: string, page: number = 1, limit: number
   }
 };
 
-export const unlockContact = async (data: UnlockMatchPayload): Promise<UnlockMatchResponse> => {
-  const response = await apiClient.post<UnlockMatchResponse>('/user-matches/unlock', data);
+export const unlockContact = async (matchId: string | number, data: UnlockMatchPayload): Promise<UnlockMatchResponse> => {
+  const response = await apiClient.post<UnlockMatchResponse>(`/matches/${matchId}/reveal`, data);
   return response.data;
 };
 

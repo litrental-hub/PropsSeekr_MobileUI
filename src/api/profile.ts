@@ -21,8 +21,8 @@ export interface GetProfileResponse {
   data?: ProfileData;
 }
 
-export const getProfile = async (): Promise<ProfileData | null> => {
-  const response = await apiClient.get<GetProfileResponse | ProfileData>('/profile');
+export const getProfile = async (brokerId: string | number): Promise<ProfileData | null> => {
+  const response = await apiClient.get<GetProfileResponse | ProfileData>(`/brokers/${brokerId}`);
   const resData = response.data;
   if (resData && 'data' in resData && resData.data) {
     return resData.data;
@@ -51,8 +51,8 @@ export interface UpdateProfileResponse {
   [key: string]: any;
 }
 
-export const updateProfile = async (data: UpdateProfilePayload): Promise<UpdateProfileResponse> => {
-  const response = await apiClient.put<UpdateProfileResponse>('/profile', data);
+export const updateProfile = async (brokerId: string | number, data: UpdateProfilePayload): Promise<UpdateProfileResponse> => {
+  const response = await apiClient.patch<UpdateProfileResponse>(`/brokers/${brokerId}`, data);
   return response.data;
 };
 

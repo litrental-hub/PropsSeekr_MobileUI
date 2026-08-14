@@ -26,7 +26,7 @@ export const getNotifications = async (
   filter = 'ALL'
 ): Promise<GetNotificationsResponse | NotificationItem[]> => {
   const response = await apiClient.get<GetNotificationsResponse | NotificationItem[]>(
-    `/notifications?userId=${encodeURIComponent(userId)}&page=${page}&limit=${limit}&filter=${encodeURIComponent(filter)}`
+    `/brokers/${encodeURIComponent(userId)}/notifications?page=${page}&limit=${limit}&filter=${encodeURIComponent(filter)}`
   );
   return response.data;
 };
@@ -43,7 +43,7 @@ export interface DefaultResponse {
 
 export const markAsRead = async (payload: MarkAsReadPayload): Promise<DefaultResponse> => {
   const response = await apiClient.patch<DefaultResponse>(
-    `/notifications/${encodeURIComponent(payload.notificationId)}/read?userId=${encodeURIComponent(payload.userId)}`
+    `/notifications/${encodeURIComponent(payload.notificationId)}/read`
   );
   return response.data;
 };

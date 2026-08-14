@@ -202,7 +202,7 @@ export default function DashboardScreen() {
         return true;
       });
 
-      const listToUse = uniqueList.length > 0 ? uniqueList : [MOCK_PROPERTY];
+      const listToUse = uniqueList.length > 0 ? uniqueList : [];
       setAllProperties(listToUse);
 
       const q = (query !== undefined ? query : searchQuery).toLowerCase().trim();
@@ -219,8 +219,8 @@ export default function DashboardScreen() {
       }
     } catch (err) {
       console.log('Property search API error on home page:', err);
-      setAllProperties([MOCK_PROPERTY]);
-      setApiProperties([MOCK_PROPERTY]);
+      setAllProperties([]);
+      setApiProperties([]);
     } finally {
       setSearching(false);
     }

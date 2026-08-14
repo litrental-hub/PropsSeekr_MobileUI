@@ -19,12 +19,15 @@ import { PurchaseBottomSheet } from './components/PurchaseBottomSheet';
 import { UnlockBottomSheet } from './components/UnlockBottomSheet';
 import { ContactRevealedModal } from './components/ContactRevealedModal';
 import { getUnlockedMatches } from '../../api/matches';
+import { getWallet } from '../../api/wallet';
+import { useAuthStore } from '../../store/authStore';
 
 export default function CreditsScreen() {
   const { colors, isDark } = useAppTheme();
   const { t } = useTranslation();
   const creditsBalance = useAppStore(s => s.creditsBalance);
   const setCreditsBalance = useAppStore(s => s.setCreditsBalance);
+  const user = useAuthStore(s => s.user);
 
   const [purchasePack, setPurchasePack] = useState<any>(null);
   const [unlockVisible, setUnlockVisible] = useState(false);
@@ -40,7 +43,17 @@ export default function CreditsScreen() {
         }
       })
       .catch(err => console.log('Failed to fetch unlocked matches history:', err?.message));
-  }, []);
+      
+    if (user?.id) {
+      getWallet(user.id)
+        .then(res => {
+          if (res && res.free_credits_balance !== undefined) {
+            setCreditsBalance(res.free_credits_balance + (res.paid_credits_balance || 0));
+          }
+        })
+        .catch(err => console.log('Failed to fetch wallet:', err?.message));
+    }
+  }, [user?.id, setCreditsBalance]);
 
   const handleBuy = (pack: any) => {
     setPurchasePack(pack);

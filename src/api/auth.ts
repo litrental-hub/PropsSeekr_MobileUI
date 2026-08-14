@@ -23,7 +23,7 @@ export interface RegisterResponse {
 }
 
 export const register = async (data: RegisterPayload): Promise<RegisterResponse> => {
-  const response = await apiClient.post<RegisterResponse>('/auth/register', data);
+  const response = await apiClient.post<RegisterResponse>('/brokers/register', data);
   return response.data;
 };
 

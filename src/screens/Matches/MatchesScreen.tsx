@@ -303,7 +303,7 @@ export default function MatchesScreen() {
               if (match.initiatorPropertyRequestId) {
                 payload.initiatorPropertyRequestId = match.initiatorPropertyRequestId;
               }
-              const res = await unlockContact(payload);
+              const res = await unlockContact(match._id, payload);
 
               setMatches(prev => {
                 const newMatches = [...prev];
