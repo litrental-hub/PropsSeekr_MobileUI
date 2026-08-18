@@ -3,18 +3,9 @@ import apiClient from './client';
 // ── Registration ────────────────────────────────────────────────────────
 export interface RegisterPayload {
   name: string;
-  mobile: string;
-  email: string;
-  password?: string;
-  addressLine1: string;
-  addressLine2?: string;
-  city: string;
-  state: string;
-  pincode: string;
-  aadharNumber: string;
-  panCard: string;
-  gstNumber?: string;
-  reraRegistrationNumber?: string;
+  phone: string;
+  locality: string;
+  brokerageName: string;
 }
 
 export interface RegisterResponse {

@@ -1,19 +1,20 @@
 import apiClient from './client';
 
 export interface RequirementPayload {
-  transactionType?: string;
-  category?: string;
-  description?: string;
-  minimumSize?: number;
-  budgetMax?: number;
-  city?: string;
-  locality?: string;
-  lat?: number;
-  lng?: number;
-  radiusKm?: number;
-  configuration?: string;
+  userId?: string;
+  lookingFor?: string;
+  listingType?: string;
   propertyType?: string;
-  projectName?: string;
+  configuration?: string;
+  location?: string;
+  latitude?: number;
+  longitude?: number;
+  radiusKm?: number;
+  budget?: string;
+  minBudgetNumeric?: number;
+  maxBudgetNumeric?: number;
+  clientNotes?: string;
+  city?: string;
 }
 
 export const addRequirement = async (data: RequirementPayload) => {

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL, STORAGE_KEYS } from '../constants';
 import { storage } from '../utils/storage';
+import { useAuthStore } from '../store/authStore';
 
 // Create axios instance
 const apiClient = axios.create({
@@ -43,10 +44,8 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return apiClient(originalRequest);
       } catch (_) {
-        // Refresh failed — clear tokens and force logout
-        storage.remove(STORAGE_KEYS.ACCESS_TOKEN);
-        storage.remove(STORAGE_KEYS.REFRESH_TOKEN);
-        // TODO: navigate to login screen via navigation ref
+        // Refresh failed — clear tokens and force global logout
+        useAuthStore.getState().logout();
       }
     }
 

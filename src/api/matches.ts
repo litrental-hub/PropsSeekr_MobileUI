@@ -18,6 +18,20 @@ export interface UnlockMatchResponse {
   unlockedContact: UnlockedContact;
 }
 
+export interface ConfirmMatchPayload {
+  isAvailable: boolean;
+  isPriceValid: boolean;
+  isPriceNegotiable: boolean;
+  readyToConnect: boolean;
+}
+
+export interface ConfirmMatchResponse {
+  match_id?: number | string;
+  state?: string;
+  window_expires_at?: string;
+  message?: string;
+}
+
 export interface MatchDTO {
   id?: string;
   _id?: string;
@@ -65,7 +79,7 @@ export const getMatches = async (userId: string, page: number = 1, limit: number
     console.log('Fetching matches from:', url);
     const response = await apiClient.get<BackendMatchesResponse>(url);
     console.log('Matches API Response Data:', JSON.stringify(response.data).substring(0, 500));
-    
+
     const responsePayload: any = response.data;
     const matchesList: MatchDTO[] = Array.isArray(responsePayload)
       ? responsePayload
@@ -89,6 +103,11 @@ export const getMatches = async (userId: string, page: number = 1, limit: number
 
 export const unlockContact = async (matchId: string | number, data: UnlockMatchPayload): Promise<UnlockMatchResponse> => {
   const response = await apiClient.post<UnlockMatchResponse>(`/matches/${matchId}/reveal`, data);
+  return response.data;
+};
+
+export const confirmMatch = async (matchId: string | number, data: ConfirmMatchPayload): Promise<ConfirmMatchResponse> => {
+  const response = await apiClient.post<ConfirmMatchResponse>(`/matches/${matchId}/confirm`, data);
   return response.data;
 };
 

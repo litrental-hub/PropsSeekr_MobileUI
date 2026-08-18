@@ -32,16 +32,9 @@ export const getProfile = async (brokerId: string | number): Promise<ProfileData
 
 export interface UpdateProfilePayload {
   name?: string;
-  fullName?: string;
-  email?: string;
-  profilePhotoUrl?: string;
-  avatarUrl?: string;
-  agencyName?: string;
-  gstNumber?: string;
-  officeAddress?: string;
-  companyName?: string;
-  companyGst?: string;
-  companyAddress?: string;
+  mobileNumber?: string;
+  locality?: string;
+  brokerageName?: string;
   [key: string]: any;
 }
 

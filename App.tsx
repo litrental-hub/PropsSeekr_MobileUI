@@ -10,13 +10,13 @@ import './src/i18n'; // Import i18n setup
 // Enforce global Inter font family consistency across all Text and TextInput elements in the application
 const defaultFontFamily = Platform.OS === 'ios' ? 'Inter' : 'Inter-Regular';
 
-const customTextProps = (Text as any).defaultProps || {};
-customTextProps.style = [{ fontFamily: defaultFontFamily }, customTextProps.style];
-(Text as any).defaultProps = customTextProps;
+// const customTextProps = (Text as any).defaultProps || {};
+// customTextProps.style = [{ fontFamily: defaultFontFamily }, customTextProps.style];
+// (Text as any).defaultProps = customTextProps;
 
-const customTextInputProps = (TextInput as any).defaultProps || {};
-customTextInputProps.style = [{ fontFamily: defaultFontFamily }, customTextInputProps.style];
-(TextInput as any).defaultProps = customTextInputProps;
+// const customTextInputProps = (TextInput as any).defaultProps || {};
+// customTextInputProps.style = [{ fontFamily: defaultFontFamily }, customTextInputProps.style];
+// (TextInput as any).defaultProps = customTextInputProps;
 
 const queryClient = new QueryClient({
   defaultOptions: {

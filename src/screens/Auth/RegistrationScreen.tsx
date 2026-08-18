@@ -60,20 +60,11 @@ export default function RegistrationScreen() {
   const onSubmit = async (data: RegistrationFormData) => {
     try {
       setIsLoading(true);
-      const payload = {
+      const payload: any = {
         name: data.name.trim(),
-        mobile: data.mobile.trim(),
-        email: data.email.trim(),
-        password: data.password,
-        addressLine1: data.addressLine1.trim(),
-        addressLine2: data.addressLine2?.trim() ? data.addressLine2.trim() : undefined,
-        city: data.city.trim(),
-        state: data.state.trim(),
-        pincode: data.pincode.trim(),
-        aadharNumber: data.aadhaar.trim(),
-        panCard: data.pan.trim().toUpperCase(),
-        gstNumber: data.gst?.trim() ? data.gst.trim().toUpperCase() : undefined,
-        reraRegistrationNumber: data.rera?.trim() ? data.rera.trim().toUpperCase() : undefined,
+        phone: data.mobile.trim(),
+        locality: `${data.addressLine1.trim()}, ${data.city.trim()}`,
+        brokerageName: `${data.name.trim()} Real Estate`, // Fallback since UI doesn't have brokerageName yet
       };
       
       const response = await register(payload);

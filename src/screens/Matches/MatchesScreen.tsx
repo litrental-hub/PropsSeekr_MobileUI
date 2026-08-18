@@ -20,7 +20,7 @@ import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { FontSize, FontWeight } from '../../constants/theme';
-import { getMatches, unlockContact, acceptUnlockRequest, MatchDTO } from '../../api/matches';
+import { getMatches, confirmMatch, acceptUnlockRequest, MatchDTO } from '../../api/matches';
 import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
@@ -299,11 +299,13 @@ export default function MatchesScreen() {
               return;
             }
             try {
-              const payload: any = { propertyRequestId: match._id };
-              if (match.initiatorPropertyRequestId) {
-                payload.initiatorPropertyRequestId = match.initiatorPropertyRequestId;
-              }
-              const res = await unlockContact(match._id, payload);
+              const payload = {
+                isAvailable: true,
+                isPriceValid: true,
+                isPriceNegotiable: false,
+                readyToConnect: true
+              };
+              const res = await confirmMatch(match._id, payload);
 
               setMatches(prev => {
                 const newMatches = [...prev];
@@ -314,7 +316,13 @@ export default function MatchesScreen() {
               Alert.alert('⌛ Request Sent', res.message || 'Unlock request sent to matching owner. Waiting for their approval.');
             } catch (err: any) {
               console.error('Unlock request error:', err);
-              Alert.alert('Request Failed', err.response?.data?.message || 'Something went wrong.');
+              let errorMsg = 'Something went wrong.';
+              if (err.response?.data) {
+                errorMsg = err.response.data.message || err.response.data.error || JSON.stringify(err.response.data);
+              } else if (err.message) {
+                errorMsg = err.message;
+              }
+              Alert.alert('Request Failed', errorMsg);
             }
           },
         },
@@ -357,8 +365,14 @@ export default function MatchesScreen() {
               setUnlockedIndices(prev => new Set([...prev, index]));
               Alert.alert('✅ Contact Unlocked', res.message || 'Broker contact successfully unlocked.');
             } catch (err: any) {
-              console.error('Accept error:', err);
-              Alert.alert('Accept Failed', err.response?.data?.message || 'Could not complete unlock acceptance.');
+              console.error('Accept request error:', err);
+              let errorMsg = 'Failed to accept the request.';
+              if (err.response?.data) {
+                errorMsg = err.response.data.message || err.response.data.error || JSON.stringify(err.response.data);
+              } else if (err.message) {
+                errorMsg = err.message;
+              }
+              Alert.alert('Error', errorMsg);
             }
           },
         },

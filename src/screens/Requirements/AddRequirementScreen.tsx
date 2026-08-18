@@ -132,6 +132,34 @@ const sectionStyles = StyleSheet.create({
   label: { marginHorizontal: 10, fontSize: 11, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
 });
 
+// ─── Field component ────────────────────────────────────────────────────────
+
+function FieldWrap({ label, required, error, children, colors }: {
+  label: string; required?: boolean; error?: string; children: React.ReactNode; colors: any;
+}) {
+  return (
+    <View style={styles.fieldWrap}>
+      <Text style={[styles.label, { color: colors.textSecondary }]}>
+        {label}
+        {required && <Text style={{ color: '#EF4444' }}> *</Text>}
+      </Text>
+      {children}
+      {!!error && <Text style={styles.errorText}>{error}</Text>}
+    </View>
+  );
+}
+
+function getInputStyle(hasError: boolean, colors: any) {
+  return [
+    styles.input,
+    {
+      backgroundColor: colors.inputBg,
+      color: colors.textPrimary,
+      borderColor: hasError ? '#EF4444' : Brand.blueBorder,
+    },
+  ];
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function AddRequirementScreen() {
@@ -144,12 +172,15 @@ export default function AddRequirementScreen() {
   const [contactNumber, setContactNumber] = useState(user?.phone || '');
   const [propertyType, setPropertyType] = useState<string>('');
   const [location, setLocation] = useState('');
+  const [listingType, setListingType] = useState<string>('RENT');
 
   // ── Optional state ───────────────────────────────────────────────────────
   const [configuration, setConfiguration] = useState<string>('');
+  const [customConfiguration, setCustomConfiguration] = useState<string>('');
   const [size, setSize] = useState('');
   const [sizeUnit, setSizeUnit] = useState<string>('Sq Ft');
-  const [price, setPrice] = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
   const [facing, setFacing] = useState<string>('');
   const [furnishing, setFurnishing] = useState<string>('');
   const [projectName, setProjectName] = useState('');
@@ -183,20 +214,35 @@ export default function AddRequirementScreen() {
         }
       }
       if (editData.configuration || editData.bhk) {
-        setConfiguration((editData.configuration || editData.bhk || '').toString());
+        const configStr = (editData.configuration || editData.bhk || '').toString();
+        if (BHK_OPTIONS.includes(configStr as any)) {
+          setConfiguration(configStr);
+        } else {
+          setConfiguration('Other');
+          setCustomConfiguration(configStr);
+        }
       } else if (editData.lookingFor || editData.description) {
         const text = (editData.lookingFor || editData.description || '').toString();
-        const match = text.match(/\b(\d+)\s*(BHK|RK)\b/i);
-        if (match) setConfiguration(`${match[1]} ${match[2].toUpperCase()}`);
-      }
-      if (editData.budgetMax || editData.budget || editData.price) {
-        const rawBudget = (editData.budgetMax || editData.budget || editData.price || '').toString();
-        const numOnly = rawBudget.replace(/[^0-9.]/g, '');
-        if (numOnly) {
-          setPrice(rawBudget.includes('Lakhs') || rawBudget.includes('L') || rawBudget.includes('Cr') ? rawBudget : numOnly);
-        } else {
-          setPrice(rawBudget);
+        const match = text.match(/\b(\d+(\.\d+)?)\s*(BHK|RK)\b/i);
+        if (match) {
+          const matchedConfig = `${match[1]} ${match[3].toUpperCase()}`;
+          if (BHK_OPTIONS.includes(matchedConfig as any)) {
+            setConfiguration(matchedConfig);
+          } else {
+            setConfiguration('Other');
+            setCustomConfiguration(matchedConfig);
+          }
         }
+      }
+      if (editData.minBudgetNumeric || editData.budget) {
+        const rawMin = (editData.minBudgetNumeric || editData.budget || '').toString();
+        const numOnlyMin = rawMin.replace(/[^0-9.]/g, '');
+        setMinPrice(rawMin.includes('L') || rawMin.includes('Cr') ? rawMin : numOnlyMin);
+      }
+      if (editData.maxBudgetNumeric || editData.budgetMax || editData.price) {
+        const rawMax = (editData.maxBudgetNumeric || editData.budgetMax || editData.price || '').toString();
+        const numOnlyMax = rawMax.replace(/[^0-9.]/g, '');
+        setMaxPrice(rawMax.includes('L') || rawMax.includes('Cr') ? rawMax : numOnlyMax);
       }
       if (editData.minimumSize || editData.size) {
         setSize((editData.minimumSize || editData.size || '').toString());
@@ -287,19 +333,27 @@ export default function AddRequirementScreen() {
     }
 
     const normalizedPhone = normalizePhone(contactNumber);
+    const minPriceNum = minPrice ? Number(minPrice) : undefined;
+    const maxPriceNum = maxPrice ? Number(maxPrice) : undefined;
+    const isRental = listingType === 'RENT';
+
+    const finalConfiguration = configuration === 'Other' ? customConfiguration.trim() : configuration;
+
     const payload: Record<string, any> = {
-      transactionType: 'RENTAL', // Defaulting for now
-      category: 'Residential',
-      description: description.trim() || undefined,
-      minimumSize: size ? Number(size) : undefined,
-      budgetMax: price ? Number(price) : undefined,
-      city: location.trim().split(',').pop()?.trim() || 'Unknown',
-      locality: location.trim(),
-      lat,
-      lng,
+      userId: user?.id,
+      lookingFor: `Wants to ${isRental ? 'Rent' : 'Buy'} ${finalConfiguration ? finalConfiguration + ' ' : ''}${propertyType}`,
+      listingType: listingType,
+      propertyType: propertyType,
+      configuration: finalConfiguration,
+      location: location.trim(),
+      latitude: lat,
+      longitude: lng,
       radiusKm: 5.0,
-      propertyType,
-      configuration,
+      budget: maxPriceNum ? `₹${(maxPriceNum/1000).toFixed(0)}k${isRental ? '/month' : ''}` : undefined,
+      minBudgetNumeric: minPriceNum,
+      maxBudgetNumeric: maxPriceNum,
+      clientNotes: description.trim() || undefined,
+      city: location.trim().split(',').pop()?.trim() || 'Unknown',
     };
 
     try {
@@ -328,31 +382,7 @@ export default function AddRequirementScreen() {
 
   // ── Field component ───────────────────────────────────────────────────────
 
-  function FieldWrap({ label, required, error, children }: {
-    label: string; required?: boolean; error?: string; children: React.ReactNode;
-  }) {
-    return (
-      <View style={styles.fieldWrap}>
-        <Text style={[styles.label, { color: colors.textSecondary }]}>
-          {label}
-          {required && <Text style={{ color: '#EF4444' }}> *</Text>}
-        </Text>
-        {children}
-        {!!error && <Text style={styles.errorText}>{error}</Text>}
-      </View>
-    );
-  }
-
-  function inputStyle(hasError: boolean) {
-    return [
-      styles.input,
-      {
-        backgroundColor: colors.inputBg,
-        color: colors.textPrimary,
-        borderColor: hasError ? '#EF4444' : Brand.blueBorder,
-      },
-    ];
-  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -402,9 +432,9 @@ export default function AddRequirementScreen() {
               {/* ── MANDATORY FIELDS ── */}
               <SectionHeader title="Basic Details  (Required)" colors={colors} />
 
-              <FieldWrap label="Your Name" required error={errors.senderName}>
+              <FieldWrap label="Your Name" required error={errors.senderName} colors={colors}>
                 <TextInput
-                  style={inputStyle(!!errors.senderName)}
+                  style={getInputStyle(!!errors.senderName, colors)}
                   placeholder="e.g. Rahul Sharma"
                   placeholderTextColor={colors.textDim}
                   value={senderName}
@@ -416,10 +446,10 @@ export default function AddRequirementScreen() {
                 />
               </FieldWrap>
 
-              <FieldWrap label="Contact Number" required error={errors.contactNumber}>
+              <FieldWrap label="Contact Number" required error={errors.contactNumber} colors={colors}>
                 <TextInput
                   ref={contactRef}
-                  style={inputStyle(!!errors.contactNumber)}
+                  style={getInputStyle(!!errors.contactNumber, colors)}
                   placeholder="10-digit mobile number"
                   placeholderTextColor={colors.textDim}
                   value={contactNumber}
@@ -432,7 +462,16 @@ export default function AddRequirementScreen() {
                 />
               </FieldWrap>
 
-              <FieldWrap label="Property Type" required error={errors.propertyType}>
+              <FieldWrap label="Looking To" required colors={colors}>
+                <PillGroup
+                  options={['Rent', 'Buy']}
+                  selected={listingType === 'RENT' ? 'Rent' : 'Buy'}
+                  onSelect={v => setListingType(v === 'Rent' ? 'RENT' : 'BUY')}
+                  colors={colors}
+                />
+              </FieldWrap>
+
+              <FieldWrap label="Property Type" required error={errors.propertyType} colors={colors}>
                 <PillGroup
                   options={PROPERTY_TYPES}
                   selected={propertyType as any}
@@ -441,10 +480,10 @@ export default function AddRequirementScreen() {
                 />
               </FieldWrap>
 
-              <FieldWrap label="Preferred Location" required error={errors.location}>
+              <FieldWrap label="Preferred Location" required error={errors.location} colors={colors}>
                 <TextInput
                   ref={locationRef}
-                  style={inputStyle(!!errors.location)}
+                  style={getInputStyle(!!errors.location, colors)}
                   placeholder="e.g. Vijay Nagar, Indore"
                   placeholderTextColor={colors.textDim}
                   value={location}
@@ -458,16 +497,31 @@ export default function AddRequirementScreen() {
               {/* ── OPTIONAL FIELDS ── */}
               <SectionHeader title="More Details  (Optional)" colors={colors} />
 
-              <FieldWrap label="Configuration">
+              <FieldWrap label="Configuration" colors={colors}>
                 <PillGroup
-                  options={BHK_OPTIONS}
-                  selected={configuration as any}
-                  onSelect={setConfiguration}
+                  options={[...BHK_OPTIONS, 'Other']}
+                  selected={BHK_OPTIONS.includes(configuration as any) ? configuration : (configuration ? 'Other' : '')}
+                  onSelect={(val) => {
+                    if (val === 'Other') {
+                      setConfiguration('Other');
+                    } else {
+                      setConfiguration(val);
+                    }
+                  }}
                   colors={colors}
                 />
+                {configuration === 'Other' && (
+                  <TextInput
+                    style={[getInputStyle(false, colors), { marginTop: 12 }]}
+                    placeholder="e.g. 2.5 BHK, 5 BHK"
+                    placeholderTextColor={colors.textDim}
+                    value={customConfiguration}
+                    onChangeText={setCustomConfiguration}
+                  />
+                )}
               </FieldWrap>
 
-              <FieldWrap label="Furnishing Preference">
+              <FieldWrap label="Furnishing Preference" colors={colors}>
                 <PillGroup
                   options={FURNISHING_OPTIONS}
                   selected={furnishing as any}
@@ -476,7 +530,7 @@ export default function AddRequirementScreen() {
                 />
               </FieldWrap>
 
-              <FieldWrap label="Preferred Facing">
+              <FieldWrap label="Preferred Facing" colors={colors}>
                 <PillGroup
                   options={FACING_OPTIONS as any}
                   selected={facing as any}
@@ -486,12 +540,12 @@ export default function AddRequirementScreen() {
               </FieldWrap>
 
               {/* Size row */}
-              <FieldWrap label="Required Area">
+              <FieldWrap label="Required Area" colors={colors}>
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                   {/* Numeric area input */}
                   <TextInput
                     ref={sizeRef}
-                    style={[inputStyle(false), { flex: 1 }]}
+                    style={[getInputStyle(false, colors), { flex: 1 }]}
                     placeholder="e.g. 1200"
                     placeholderTextColor={colors.textDim}
                     value={size}
@@ -560,30 +614,51 @@ export default function AddRequirementScreen() {
                 </Modal>
               </FieldWrap>
 
-              <FieldWrap label="Budget (₹)">
-                <TextInput
-                  ref={priceRef}
-                  style={inputStyle(false)}
-                  placeholder="e.g. 5000000"
-                  placeholderTextColor={colors.textDim}
-                  value={price}
-                  onChangeText={setPrice}
-                  keyboardType="numeric"
-                  returnKeyType="next"
-                  onSubmitEditing={() => projectRef.current?.focus()}
-                  blurOnSubmit={false}
-                />
-                {!!price && Number(price) > 0 && (
-                  <Text style={[styles.priceHint, { color: Brand.teal }]}>
-                    ≈ ₹{(Number(price) / 100000).toFixed(1)} L
-                  </Text>
-                )}
+              <FieldWrap label="Budget Range (₹)" colors={colors}>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      style={getInputStyle(false, colors)}
+                      placeholder="Min (e.g. 20000)"
+                      placeholderTextColor={colors.textDim}
+                      value={minPrice}
+                      onChangeText={setMinPrice}
+                      keyboardType="numeric"
+                      returnKeyType="next"
+                      blurOnSubmit={false}
+                    />
+                    {!!minPrice && Number(minPrice) > 0 && (
+                      <Text style={[styles.priceHint, { color: Brand.teal }]}>
+                        ≈ ₹{(Number(minPrice) / 100000).toFixed(1)} L
+                      </Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      ref={priceRef}
+                      style={getInputStyle(false, colors)}
+                      placeholder="Max (e.g. 50000)"
+                      placeholderTextColor={colors.textDim}
+                      value={maxPrice}
+                      onChangeText={setMaxPrice}
+                      keyboardType="numeric"
+                      returnKeyType="next"
+                      onSubmitEditing={() => projectRef.current?.focus()}
+                      blurOnSubmit={false}
+                    />
+                    {!!maxPrice && Number(maxPrice) > 0 && (
+                      <Text style={[styles.priceHint, { color: Brand.teal }]}>
+                        ≈ ₹{(Number(maxPrice) / 100000).toFixed(1)} L
+                      </Text>
+                    )}
+                  </View>
+                </View>
               </FieldWrap>
 
-              <FieldWrap label="Project / Society Name">
+              <FieldWrap label="Project / Society Name" colors={colors}>
                 <TextInput
                   ref={projectRef}
-                  style={inputStyle(false)}
+                  style={getInputStyle(false, colors)}
                   placeholder="e.g. Omaxe Hills (optional)"
                   placeholderTextColor={colors.textDim}
                   value={projectName}
@@ -594,10 +669,10 @@ export default function AddRequirementScreen() {
                 />
               </FieldWrap>
 
-              <FieldWrap label="Additional Notes">
+              <FieldWrap label="Additional Notes" colors={colors}>
                 <TextInput
                   ref={descRef}
-                  style={[inputStyle(false), styles.textArea]}
+                  style={[getInputStyle(false, colors), styles.textArea]}
                   placeholder="Any specific requirements, preferred floor, etc."
                   placeholderTextColor={colors.textDim}
                   value={description}

@@ -83,8 +83,8 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
 
       const isSuccessful = verifyRes.success || verifyRes.status === 'SUCCESS' || verifyRes.status === 'success' || verifyRes.newBalance !== undefined || verifyRes.creditsBalance !== undefined;
       if (isSuccessful) {
-        const updatedBal = verifyRes.newBalance ?? verifyRes.creditsBalance ?? (creditsBalance + Number(pack.credits || 0));
-        setCreditsBalance(updatedBal);
+        const updatedBal = verifyRes.newBalance ?? verifyRes.creditsBalance ?? (useAppStore.getState().creditsBalance + Number(pack.credits || 0));
+        useAppStore.getState().setCreditsBalance(updatedBal);
         onSuccess(updatedBal);
       } else {
         throw new Error(verifyRes.message || 'Payment verification failed');
