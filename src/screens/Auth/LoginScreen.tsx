@@ -53,13 +53,25 @@ export default function LoginScreen() {
       setIsLoading(true);
       const res = await login({ identifier, password });
       
+      // Extract user info from either `user` or `broker` payload
+      const userId = res.user?.id || res.broker?.broker_id || '';
+      const brokerId = res.user?.brokerId || res.broker?.broker_id || '';
+      const userName = res.user?.name || res.broker?.name || '';
+      const userPhone = res.user?.mobileNumber || res.broker?.mobile || '';
+      const userEmail = res.user?.email || res.broker?.email || '';
+
+      console.log('--- LOGIN RESPONSE ---');
+      console.log('res.user.brokerId:', res.user?.brokerId);
+      console.log('Extracted brokerId:', brokerId);
+
       // Save token and user details to store
       setAuth(
         {
-          id: res.user.id,
-          name: res.user.name,
-          phone: res.user.mobileNumber,
-          email: res.user.email,
+          id: String(userId),
+          brokerId: brokerId,
+          name: userName,
+          phone: userPhone,
+          email: userEmail,
           isAadhaarVerified: false,
           isReraVerified: false,
         },

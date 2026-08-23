@@ -111,50 +111,60 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
     const areaNum = parseFloat(String(state.carpetArea || state.plotArea || state.superBuiltupArea || '1200').replace(/[^0-9.]/g, '')) || 1200;
     const bedroomsNum = parseInt(state.bhk || String(state.numberOfBedrooms || 0), 10) || (state.bhk?.includes('1') ? 1 : state.bhk?.includes('2') ? 2 : state.bhk?.includes('3') ? 3 : state.bhk?.includes('4') ? 4 : 1);
 
+    // --- Map UI property type to backend enum ---
+    const propertyTypeMap: Record<string, string> = {
+      'Flat/Apartment': 'APARTMENT',
+      'Independent House': 'INDEPENDENT_HOUSE',
+      'Bungalow/Villa': 'BUNGALOW',
+      'Plot/Land': 'PLOT',
+      'PG/Hostel': 'PG',
+      'Office Space': 'OFFICE',
+      'Shop/Retail': 'SHOP',
+      'Warehouse': 'WAREHOUSE',
+      'Agricultural Land': 'AGRICULTURAL_LAND',
+      'Institution/Specialised': 'INSTITUTION',
+    };
+    const backendPropertyType = propertyTypeMap[state.propertyType || ''] || 'APARTMENT';
+
+    // --- BHK numeric value ---
+    const bhkNum = parseInt(state.bhk || '0', 10) || 0;
+
+    // --- Build the new API payload (snake_case to match backend schema) ---
     const payload = {
-      ...state,
-      userId: user?.id || '4a35c4d2-6bc9-432c-97e8-2485664fab58',
-      title,
-      transactionType: state.transactionType === 'Rent' ? 'RENTAL' : 'BUY_SELL',
-      listingType: state.transactionType === 'Rent' ? 'RENTAL' : 'BUY_SELL',
-      type: state.transactionType === 'Rent' ? 'RENTAL' : 'BUY_SELL',
-      category: (state.propertyType === 'Office Space' || state.propertyType === 'Shop/Retail' || state.propertyType === 'Warehouse') ? 'Commercial' : 'Residential',
-      propertyType: state.propertyType,
-      price: priceNum,
-      askingPrice: priceNum,
-      priceNumeric: priceNum,
-      location: `${state.areaLocality || 'Indore'}, ${state.city || 'Indore'}`.replace(/^, /, ''),
+      broker_id: Number(user?.brokerId) || 0,
+      property_type: backendPropertyType,
       locality: state.areaLocality || state.city || 'Unknown',
-      city: state.city || 'Indore',
-      latitude: lat,
-      longitude: lng,
-      lat,
-      lng,
-      bedrooms: bedroomsNum,
-      bathrooms: state.bathrooms || 1,
-      builtUpSize: areaNum,
-      areaSqFt: areaNum,
-      furnishing: state.furnishingStatus || 'Unfurnished',
-      description: state.additionalNotes || `${state.bhk || ''} ${state.propertyType} located in ${state.areaLocality || 'Indore'}.`,
-      images: [],
-      status: 'ACTIVE',
+      price: priceNum,
+      posted_by: 'BROKER',
+      requirement_ids: [] as number[],
+      sizes: [
+        {
+          size_sqft: areaNum,
+          bhk: bhkNum,
+        }
+      ],
     };
 
     try {
-      await addListing(payload);
+      const res = await addListing(payload);
       setIsSubmitting(false);
-      Alert.alert(
-        '✅ Property Listed Successfully!',
-        'Your property has been submitted to the inventory and automated matchmaking has begun.',
-        [
-          { 
-            text: 'View My Properties', 
-            onPress: () => {
-              navigation.navigate('MainTabs' as any, { screen: 'MyProperties' } as any);
-            } 
-          }
-        ]
-      );
+
+      if (res.success || res.listing_id) {
+        Alert.alert(
+          '✅ Property Listed Successfully!',
+          `Your property has been submitted (ID: ${res.listing_id || 'N/A'}) and automated matchmaking has begun.`,
+          [
+            {
+              text: 'View My Properties',
+              onPress: () => {
+                navigation.navigate('MainTabs' as any, { screen: 'MyProperties' } as any);
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('❌ Submission Failed', res.message || 'Could not save property listing. Please try again.');
+      }
     } catch (err: any) {
       setIsSubmitting(false);
       let msg = 'Could not save property listing. Please try again.';

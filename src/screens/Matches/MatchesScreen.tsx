@@ -20,7 +20,7 @@ import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { FontSize, FontWeight } from '../../constants/theme';
-import { getMatches, confirmMatch, acceptUnlockRequest, MatchDTO } from '../../api/matches';
+import { getMatches, confirmMatch, revealMatch, MatchDTO } from '../../api/matches';
 import apiClient from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
@@ -55,10 +55,17 @@ interface MatchDetails {
 }
 
 interface Match {
-  _id?: string;
+  matchId: number;                  // integer from matches.matchid
+  _id?: string;                     // legacy
   notificationId?: string;
   initiatorPropertyRequestId?: string;
-  unlockStatus?: 'locked' | 'pending' | 'matched' | 'matched and confirmed' | any;
+  // ── New handshake state fields ──
+  state: 'matched' | 'pending_confirmation' | 'confirmed' | 'expired' | string;
+  currentBrokerConfirmed: boolean;  // has the logged-in broker already confirmed?
+  windowExpiresAt: string | null;   // ISO timestamp for countdown
+  isRevealed: boolean;              // true when reveals row exists in DB
+  unlockedContact: { ownerName: string; ownerMobile: string; ownerEmail: string | null } | null;
+  // ── Display fields ──
   matchQuality: string;
   scorePercent: number;
   property: MatchProperty;
@@ -126,25 +133,25 @@ function mapDTOToMatch(dto: MatchDTO, defaultTxType?: string): Match {
   const reqBudget = req.priceLabel || (reqBudgetVal > 0 ? formatPrice(reqBudgetVal) : (typeof raw.budget === 'string' && !raw.budget.includes('NaN') ? raw.budget : propPrice));
   const reqLocality = req.locality || locality || location;
 
-  // Contact resolution (unlocked vs hidden)
-  const brokerName = raw.ownerContact?.ownerName || raw.ownerContact?.name || raw.ownerContact?.brokerName || raw.ownerName || raw.brokerName || 'Hidden';
-  const brokerPhone = raw.ownerContact?.ownerMobile || raw.ownerContact?.mobile || raw.ownerContact?.brokerPhone || raw.ownerMobile || raw.brokerPhone || 'Hidden';
+  // Contact resolution — only revealed contacts are shown
+  const revealed = raw.isRevealed === true;
+  const contact = raw.unlockedContact || null;
+  const brokerName = revealed && contact ? (contact.ownerName || 'Broker') : 'Hidden';
+  const brokerPhone = revealed && contact ? (contact.ownerMobile || '') : 'Hidden';
 
-  // Normalize unlockStatus according to updated specifications
-  let rawStatus = String(raw.unlockStatus || '').toLowerCase().trim();
-  let status: 'NONE' | 'PENDING' | 'REQUESTED' | 'UNLOCKED' = 'NONE';
-  if (raw.isUnlocked === true || rawStatus === 'unlocked' || rawStatus === 'matched and confirmed' || rawStatus.includes('confirmed')) {
-    status = 'UNLOCKED';
-  } else if (rawStatus === 'pending') {
-    status = 'PENDING';
-  } else if (rawStatus === 'matched' || rawStatus === 'requested') {
-    status = 'REQUESTED';
-  } else {
-    // "locked", "none", or fallback
-    status = 'NONE';
-  }
+  // New state-machine fields
+  const matchId: number = Number(raw.matchid ?? raw.matchId ?? raw.id ?? 0);
+  const state: string = String(raw.state || 'matched').toLowerCase();
+  const currentBrokerConfirmed: boolean = raw.currentBrokerConfirmed === true;
+  const windowExpiresAt: string | null = raw.windowExpiresAt || null;
 
   return {
+    matchId,
+    state,
+    currentBrokerConfirmed,
+    windowExpiresAt,
+    isRevealed: revealed,
+    unlockedContact: contact,
     matchQuality,
     scorePercent: score,
     property: {
@@ -170,9 +177,8 @@ function mapDTOToMatch(dto: MatchDTO, defaultTxType?: string): Match {
       price: propPrice !== 'Price On Request' ? propPrice : 'Budget Matched',
     },
     _id: raw.id || raw._id || Math.random().toString(),
-    notificationId: raw.notificationId || raw.unlockNotificationId || raw.requestId || raw.id || raw._id || '',
-    initiatorPropertyRequestId: raw.initiatorPropertyRequestId || raw.initiatorRequestId || '',
-    unlockStatus: status as any,
+    notificationId: raw.notificationId || raw.id || raw._id || '',
+    initiatorPropertyRequestId: raw.initiatorPropertyRequestId || '',
   };
 }
 
@@ -214,7 +220,7 @@ export default function MatchesScreen() {
   const { colors, type, isDark } = theme;
   const { t } = useTranslation();
 
-  const { sectionType } = useAppStore();
+  const { sectionType, setCreditsBalance } = useAppStore();
   const transactionType = sectionType === 'Rentals' ? 'RENTAL' : 'BUY_SELL';
 
   const [matches, setMatches] = useState<Match[]>([]);
@@ -224,12 +230,11 @@ export default function MatchesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [revealingMatchId, setRevealingMatchId] = useState<number | null>(null);
 
   const { user } = useAuthStore();
   const userId = user?.id || '';
-
-  // Track which card indices have been unlocked
-  const [unlockedIndices, setUnlockedIndices] = useState<Set<number>>(new Set());
+  const brokerId = user?.brokerId || '';
 
   const isMounted = useRef(true);
   useEffect(() => () => { isMounted.current = false; }, []);
@@ -250,7 +255,8 @@ export default function MatchesScreen() {
       const mappedMatches = data.matches.map(m => mapDTOToMatch(m, transactionType));
       if (reset) {
         setMatches(mappedMatches);
-        setUnlockedIndices(new Set()); // reset unlock state on refresh
+        setRefreshing(false);
+        setRevealingMatchId(null);
       } else {
         setMatches(prev => [...prev, ...mappedMatches]);
       }
@@ -283,102 +289,152 @@ export default function MatchesScreen() {
     loadPage(page + 1, false);
   }, [loadingMore, loading, pagination, page, loadPage]);
 
-  // ── Unlock handlers (Phase 1 Initiate & Phase 2 Accept) ──────
-  const handleUnlock = useCallback((index: number, match: Match & { _id?: string }) => {
-    Alert.alert(
-      '🔓 Send Unlock Request',
-      `This will initiate an unlock request to the matching owner. Tokens (1 Token / ₹${UNLOCK_COST_RS}) will only be debited from both parties once they accept.\n\nSend Request?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Send Request`,
-          style: 'default',
-          onPress: async () => {
-            if (!match._id) {
-              Alert.alert('Error', 'Invalid match ID.');
-              return;
-            }
-            try {
-              const payload = {
-                isAvailable: true,
-                isPriceValid: true,
-                isPriceNegotiable: false,
-                readyToConnect: true
-              };
-              const res = await confirmMatch(match._id, payload);
+  // ── Reveal handler — fetches contacts after both confirm ────
+  const handleReveal = useCallback(async (match: Match) => {
+    if (!brokerId) return;
+    setRevealingMatchId(match.matchId);
+    try {
+      const res = await revealMatch(match.matchId, {
+        matchId: match.matchId,
+        brokerId: Number(brokerId),
+      });
 
-              setMatches(prev => {
-                const newMatches = [...prev];
-                newMatches[index] = { ...newMatches[index], unlockStatus: 'PENDING' };
-                return newMatches;
-              });
-
-              Alert.alert('⌛ Request Sent', res.message || 'Unlock request sent to matching owner. Waiting for their approval.');
-            } catch (err: any) {
-              console.error('Unlock request error:', err);
-              let errorMsg = 'Something went wrong.';
-              if (err.response?.data) {
-                errorMsg = err.response.data.message || err.response.data.error || JSON.stringify(err.response.data);
-              } else if (err.message) {
-                errorMsg = err.message;
+      if (res.success && res.unlockedContact) {
+        // Update the match card with real contact + mark revealed
+        setMatches(prev => prev.map(m =>
+          m.matchId === match.matchId
+            ? {
+                ...m,
+                isRevealed: true,
+                unlockedContact: res.unlockedContact,
+                state: 'confirmed',
+                property: { ...m.property, brokerName: res.unlockedContact!.ownerName, brokerPhone: res.unlockedContact!.ownerMobile },
+                buyer:    { ...m.buyer,    brokerName: res.unlockedContact!.ownerName, brokerPhone: res.unlockedContact!.ownerMobile },
               }
-              Alert.alert('Request Failed', errorMsg);
-            }
-          },
-        },
-      ],
-    );
-  }, []);
+            : m
+        ));
+        // Update global token balance
+        if (res.creditsRemaining !== undefined) {
+          setCreditsBalance(res.creditsRemaining);
+        }
+      } else {
+        const msg = res.message || '';
+        if (msg.toLowerCase().includes('credit')) {
+          Alert.alert(
+            '💳 Insufficient Tokens',
+            'You need at least 1 token to reveal contact details. Buy more tokens?',
+            [
+              { text: 'Not Now', style: 'cancel' },
+              { text: 'Buy Tokens', onPress: () => navigation.navigate('MainTabs' as any, { screen: 'Tokens' } as any) },
+            ]
+          );
+        } else {
+          Alert.alert('Reveal Failed', msg || 'Could not reveal contact. Please try again.');
+        }
+      }
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Failed to reveal contact.';
+      Alert.alert('Error', errMsg);
+    } finally {
+      setRevealingMatchId(null);
+    }
+  }, [brokerId, navigation, setCreditsBalance]);
 
-  const handleAccept = useCallback((index: number, match: Match & { _id?: string; notificationId?: string }) => {
-    if (!userId) {
-      Alert.alert('Error', 'You must be logged in to confirm unlock requests.');
+  // ── Unlock handler — Broker A taps "Unlock" on a matched card ─
+  const handleUnlock = useCallback((match: Match) => {
+    if (!brokerId || !match.matchId) {
+      Alert.alert('Error', 'Invalid match or broker ID.');
       return;
     }
     Alert.alert(
-      '🤝 Accept & Unlock Match',
-      `Accepting this request will unmask owner contact details and debit 1 Token (₹${UNLOCK_COST_RS}) from your balance.\n\nConfirm Unlock?`,
+      '🔓 Unlock Contact',
+      'Sending an unlock request to the other broker.\n1 token will be deducted from each party once both confirm.\n\nProceed?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: `Accept & Unlock`,
-          style: 'default',
+          text: 'Unlock',
           onPress: async () => {
             try {
-              const notifId = match.notificationId || match._id || '';
-              const res = await acceptUnlockRequest(notifId, userId);
-              const meta = res?.meta || res?.unlockedContact || {};
-              const ownerName = meta.brokerName || meta.ownerName || match.property.brokerName || 'Verified Broker';
-              const ownerMobile = meta.brokerPhone || meta.ownerMobile || match.property.brokerPhone || '+91 98260 77745';
-
-              setMatches(prev => {
-                const newMatches = [...prev];
-                const updated = { ...newMatches[index], unlockStatus: 'UNLOCKED' as const };
-                updated.property.brokerName = ownerName;
-                updated.property.brokerPhone = ownerMobile;
-                updated.buyer.brokerName = ownerName;
-                updated.buyer.brokerPhone = ownerMobile;
-                newMatches[index] = updated;
-                return newMatches;
+              const res = await confirmMatch(match.matchId, {
+                matchId: match.matchId,
+                brokerId: Number(brokerId),
+                availabilityConfirmed: true,
+                priceValid: true,
+                priceNegotiable: false,
+                readyToConnect: true,
               });
 
-              setUnlockedIndices(prev => new Set([...prev, index]));
-              Alert.alert('✅ Contact Unlocked', res.message || 'Broker contact successfully unlocked.');
-            } catch (err: any) {
-              console.error('Accept request error:', err);
-              let errorMsg = 'Failed to accept the request.';
-              if (err.response?.data) {
-                errorMsg = err.response.data.message || err.response.data.error || JSON.stringify(err.response.data);
-              } else if (err.message) {
-                errorMsg = err.message;
+              if (res.state === 'confirmed') {
+                // Edge case: other broker already confirmed — go straight to reveal
+                setMatches(prev => prev.map(m =>
+                  m.matchId === match.matchId ? { ...m, state: 'confirmed', currentBrokerConfirmed: true } : m
+                ));
+                await handleReveal({ ...match, state: 'confirmed', currentBrokerConfirmed: true });
+              } else {
+                // Normal case: waiting for other broker
+                setMatches(prev => prev.map(m =>
+                  m.matchId === match.matchId
+                    ? { ...m, state: 'pending_confirmation', currentBrokerConfirmed: true, windowExpiresAt: res.windowExpiresAt || null }
+                    : m
+                ));
+                Alert.alert('⌛ Request Sent', res.message || 'Unlock request sent. Waiting for the other broker to accept.');
               }
-              Alert.alert('Error', errorMsg);
+            } catch (err: any) {
+              const errMsg = err?.response?.data?.message || err?.message || 'Could not send unlock request.';
+              Alert.alert('Error', errMsg);
             }
           },
         },
-      ],
+      ]
     );
-  }, [userId]);
+  }, [brokerId, handleReveal]);
+
+  // ── Accept handler — Broker B taps "Accept & Unlock" ─────────
+  const handleAccept = useCallback((match: Match) => {
+    if (!brokerId || !match.matchId) {
+      Alert.alert('Error', 'Invalid match or broker ID.');
+      return;
+    }
+    Alert.alert(
+      '🤝 Accept & Unlock',
+      'Accepting will reveal each other\'s contact details.\n1 token will be deducted from each broker.\n\nConfirm?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Accept & Unlock',
+          onPress: async () => {
+            try {
+              const res = await confirmMatch(match.matchId, {
+                matchId: match.matchId,
+                brokerId: Number(brokerId),
+                availabilityConfirmed: true,
+                priceValid: true,
+                priceNegotiable: false,
+                readyToConnect: true,
+              });
+
+              if (res.state === 'confirmed') {
+                setMatches(prev => prev.map(m =>
+                  m.matchId === match.matchId ? { ...m, state: 'confirmed', currentBrokerConfirmed: true } : m
+                ));
+                // Both confirmed — trigger reveal
+                await handleReveal({ ...match, state: 'confirmed', currentBrokerConfirmed: true });
+              } else {
+                setMatches(prev => prev.map(m =>
+                  m.matchId === match.matchId
+                    ? { ...m, state: 'pending_confirmation', currentBrokerConfirmed: true, windowExpiresAt: res.windowExpiresAt || null }
+                    : m
+                ));
+              }
+            } catch (err: any) {
+              const errMsg = err?.response?.data?.message || err?.message || 'Could not accept unlock request.';
+              Alert.alert('Error', errMsg);
+            }
+          },
+        },
+      ]
+    );
+  }, [brokerId, handleReveal]);
 
   // ── More Details handler ─────────────────────────────────────
   const handleMoreDetails = useCallback((_match: Match) => {
@@ -517,9 +573,9 @@ export default function MatchesScreen() {
             <MatchCard
               match={item}
               colors={colors}
-              isUnlocked={unlockedIndices.has(index) || item.unlockStatus === 'UNLOCKED'}
-              onUnlock={() => handleUnlock(index, item)}
-              onAccept={() => handleAccept(index, item)}
+              isRevealing={revealingMatchId === item.matchId}
+              onUnlock={() => handleUnlock(item)}
+              onAccept={() => handleAccept(item)}
               onMoreDetails={() => handleMoreDetails(item)}
             />
           )}
@@ -609,16 +665,16 @@ function ScreenHeader({
 function MatchCard({
   match,
   colors,
-  isUnlocked,
+  isRevealing,
   onUnlock,
   onAccept,
   onMoreDetails,
 }: {
   match: Match;
   colors: ReturnType<typeof useAppTheme>['colors'];
-  isUnlocked: boolean;
-  onUnlock: () => void;
-  onAccept: () => void;
+  isRevealing: boolean;   // spinner shown while reveal API is in-flight
+  onUnlock: () => void;   // Broker A: tap Unlock
+  onAccept: () => void;   // Broker B: tap Accept & Unlock
   onMoreDetails: () => void;
 }) {
   const { t } = useTranslation();
@@ -701,7 +757,7 @@ function MatchCard({
           <BrokerChip
             name={match.property.brokerName}
             phone={match.property.brokerPhone}
-            isUnlocked={isUnlocked}
+            isUnlocked={match.isRevealed}
             colors={colors}
           />
         </View>
@@ -737,42 +793,60 @@ function MatchCard({
           <BrokerChip
             name={match.buyer.brokerName}
             phone={match.buyer.brokerPhone}
-            isUnlocked={isUnlocked}
+            isUnlocked={match.isRevealed}
             colors={colors}
           />
         </View>
       </View>
 
-      {/* ── Action Buttons ── */}
+      {/* ── Action Buttons — 6-state machine ── */}
       <View style={[styles.actionDivider, { backgroundColor: Brand.blueBorder }]} />
 
       <View style={styles.actionSection}>
-        {/* Unlock / Status Button */}
-        {match.unlockStatus === 'UNLOCKED' || match.unlockStatus === 'matched and confirmed' || isUnlocked ? (
+        {/* ── STATE: REVEALED — show contact + call/WhatsApp ── */}
+        {match.isRevealed && match.unlockedContact ? (
           <View style={[styles.unlockedBanner, { backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)' }]}>
             <Text style={styles.unlockedBannerEmoji}>✅</Text>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.unlockedBannerTitle, { color: Brand.teal }]}>{t('matchesScreen.unlocked') || 'Contact Unlocked'}</Text>
+              <Text style={[styles.unlockedBannerTitle, { color: Brand.teal }]}>Contact Unlocked</Text>
               <Text style={[styles.unlockedBannerSub, { color: colors.textDim }]}>
-                Tokens deducted · Tap broker chips above to dial directly
+                {match.unlockedContact.ownerName} · {match.unlockedContact.ownerMobile}
               </Text>
             </View>
           </View>
-        ) : match.unlockStatus === 'PENDING' || match.unlockStatus === 'pending' ? (
+
+        ) : isRevealing ? (
+          /* ── STATE: REVEAL IN FLIGHT — spinner ── */
+          <View style={[styles.unlockBtnWrap, { backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', borderWidth: 1 }]}>
+            <ActivityIndicator size="small" color={Brand.teal} />
+            <Text style={[styles.unlockText, { color: Brand.teal, marginLeft: 8 }]}>Fetching contacts...</Text>
+          </View>
+
+        ) : match.state === 'confirmed' ? (
+          /* ── STATE: CONFIRMED but not yet revealed — auto-reveal ── */
+          <View style={[styles.unlockBtnWrap, { backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', borderWidth: 1 }]}>
+            <ActivityIndicator size="small" color={Brand.teal} />
+            <Text style={[styles.unlockText, { color: Brand.teal, marginLeft: 8 }]}>Both confirmed — fetching contacts...</Text>
+          </View>
+
+        ) : match.state === 'pending_confirmation' && match.currentBrokerConfirmed ? (
+          /* ── STATE: PENDING — current broker already sent request, waiting ── */
           <TouchableOpacity
-            onPress={() => Alert.alert('⌛ ' + (t('matchesScreen.notifSent') || 'Notified'), 'Unlock request has already been sent to the matching owner. Tokens will only be debited once they accept.')}
             activeOpacity={0.85}
-            style={[styles.unlockBtnWrap, { borderWidth: 1.5, borderColor: 'rgba(245, 158, 11, 0.4)', backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}
+            style={[styles.unlockBtnWrap, { borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.4)', backgroundColor: 'rgba(245,158,11,0.12)' }]}
+            onPress={() => Alert.alert('⌛ Waiting', `Unlock request sent. Waiting for the other broker to accept.${match.windowExpiresAt ? `\nExpires: ${new Date(match.windowExpiresAt).toLocaleTimeString()}` : ''}`)}
           >
             <View style={styles.pendingBtnRow}>
               <Text style={styles.unlockIcon}>⌛</Text>
-              <Text style={[styles.unlockText, { color: '#F59E0B' }]}>{t('matchesScreen.notifSent') || 'Notified'}</Text>
-              <View style={[styles.unlockCostBadge, { backgroundColor: 'rgba(245, 158, 11, 0.25)' }]}>
-                <Text style={[styles.unlockCostText, { color: '#F59E0B' }]}>{t('matchesScreen.pendingApproval') || 'Pending Approval'}</Text>
+              <Text style={[styles.unlockText, { color: '#F59E0B' }]}>Waiting for other broker</Text>
+              <View style={[styles.unlockCostBadge, { backgroundColor: 'rgba(245,158,11,0.25)' }]}>
+                <Text style={[styles.unlockCostText, { color: '#F59E0B' }]}>Pending</Text>
               </View>
             </View>
           </TouchableOpacity>
-        ) : match.unlockStatus === 'REQUESTED' || match.unlockStatus === 'matched' ? (
+
+        ) : match.state === 'pending_confirmation' && !match.currentBrokerConfirmed ? (
+          /* ── STATE: PENDING — other broker initiated, this broker must accept ── */
           <TouchableOpacity
             onPress={onAccept}
             activeOpacity={0.85}
@@ -785,13 +859,15 @@ function MatchCard({
               style={styles.unlockGrad}
             >
               <Text style={styles.unlockIcon}>🤝</Text>
-              <Text style={styles.unlockText}>{t('matchesScreen.acceptAndUnlock') || 'Accept & Unlock'}</Text>
+              <Text style={styles.unlockText}>Accept &amp; Unlock</Text>
               <View style={styles.unlockCostBadge}>
                 <Text style={styles.unlockCostText}>1 Token</Text>
               </View>
             </LinearGradient>
           </TouchableOpacity>
+
         ) : (
+          /* ── STATE: MATCHED (default) or EXPIRED — show Unlock button ── */
           <TouchableOpacity
             onPress={onUnlock}
             activeOpacity={0.85}
@@ -804,7 +880,9 @@ function MatchCard({
               style={styles.unlockGrad}
             >
               <Text style={styles.unlockIcon}>🔓</Text>
-              <Text style={styles.unlockText}>{t('matchesScreen.unlockContact') || 'Unlock Contact'}</Text>
+              <Text style={styles.unlockText}>
+                {match.state === 'expired' ? 'Unlock Again' : 'Unlock Contact'}
+              </Text>
               <View style={styles.unlockCostBadge}>
                 <Text style={styles.unlockCostText}>1 Token</Text>
               </View>

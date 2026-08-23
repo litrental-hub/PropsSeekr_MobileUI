@@ -91,3 +91,26 @@ export const unlockBroker = async (payload: UnlockContactPayload): Promise<Unloc
   );
   return response.data;
 };
+
+// ── Additional Notification Endpoints (Entire Flow) ───────────────────
+
+export interface NotificationPreferences {
+  whatsapp_enabled: boolean;
+  in_app_enabled: boolean;
+  reminder_frequency_cap_hours?: number;
+}
+
+export const getNotificationPreferences = async (brokerId: string | number): Promise<NotificationPreferences> => {
+  const response = await apiClient.get<NotificationPreferences>(`/brokers/${brokerId}/notification-preferences`);
+  return response.data;
+};
+
+export interface UpdateNotificationPreferencesPayload {
+  whatsapp_enabled?: boolean;
+  in_app_enabled?: boolean;
+}
+
+export const updateNotificationPreferences = async (brokerId: string | number, data: UpdateNotificationPreferencesPayload): Promise<NotificationPreferences> => {
+  const response = await apiClient.patch<NotificationPreferences>(`/brokers/${brokerId}/notification-preferences`, data);
+  return response.data;
+};

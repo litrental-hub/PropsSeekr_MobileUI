@@ -4,7 +4,8 @@ import { STORAGE_KEYS } from '../constants';
 import { logout as logoutApi } from '../api/auth';
 
 interface User {
-  id: string;
+  id: string; // The backend GUID
+  brokerId?: number | string; // The numeric broker ID used for profile
   name: string;
   phone: string;
   email?: string;
@@ -25,6 +26,7 @@ interface AuthState {
   appPin: string | null;
   biometricEnabled: boolean;
   isLocked: boolean;
+  isIgnoringAppLock: boolean;
 
   setAuth: (user: User, accessToken: string, refreshToken: string) => void;
   updateUser: (updates: Partial<User>) => void;
@@ -34,6 +36,7 @@ interface AuthState {
   setAppPin: (pin: string | null) => void;
   setBiometricEnabled: (enabled: boolean) => void;
   setIsLocked: (locked: boolean) => void;
+  setIsIgnoringAppLock: (ignore: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>(set => {
@@ -59,6 +62,7 @@ export const useAuthStore = create<AuthState>(set => {
     appPin: storedPin,
     biometricEnabled: storage.getBoolean(STORAGE_KEYS.BIOMETRIC_ENABLED) ?? false,
     isLocked: isAuth && !!storedPin, // Lock immediately on boot if authenticated and has PIN
+    isIgnoringAppLock: false,
 
     setAuth: (user, accessToken, refreshToken) => {
       storage.set(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
@@ -114,5 +118,6 @@ export const useAuthStore = create<AuthState>(set => {
     },
 
     setIsLocked: (locked) => set({ isLocked: locked }),
+    setIsIgnoringAppLock: (ignore) => set({ isIgnoringAppLock: ignore }),
   };
 });

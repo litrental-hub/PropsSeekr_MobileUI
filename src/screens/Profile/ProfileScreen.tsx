@@ -23,7 +23,7 @@ import { z } from 'zod';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAuthStore } from '../../store/authStore';
 import { useTranslation } from 'react-i18next';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { getProfile, updateProfile, uploadProfilePhoto } from '../../api/profile';
 
@@ -54,48 +54,57 @@ export default function ProfileScreen() {
   const { control, handleSubmit, reset, formState: { errors, isDirty } } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      name: 'Balaji G. Test',
-      companyName: 'PropSeekr Realty',
-      companyGst: '23ABCDE1234F1Z5',
-      companyAddress: 'Vijay Nagar, Indore, MP',
-      email: 'balaji.updated@example.com',
+      name: '',
+      companyName: '',
+      companyGst: '',
+      companyAddress: '',
+      email: '',
     },
   });
 
-  React.useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        setLoading(true);
-        const profile = await getProfile(user?.id || '');
-        if (profile) {
-          reset({
-            name: profile.name || profile.fullName || 'Balaji G. Test',
-            companyName: profile.companyName || (profile as any).agencyName || 'PropSeekr Realty',
-            companyGst: profile.companyGst || (profile as any).gstNumber || '',
-            companyAddress: profile.companyAddress || (profile as any).officeAddress || '',
-            email: profile.email || 'balaji.updated@example.com',
-          });
-          if (profile.profilePhotoUrl || (profile as any).avatarUrl) {
-            const url = profile.profilePhotoUrl || (profile as any).avatarUrl;
-            setPhotoUrl(url);
-            if (url && url !== '/uploads/profile-photos/default-avatar.png') {
-              setPhotoUri(url);
+  useFocusEffect(
+    React.useCallback(() => {
+      const fetchUserData = async () => {
+        try {
+          setLoading(true);
+          if (!user?.brokerId) {
+            console.error('No brokerId found');
+            return;
+          }
+          const targetId = user.brokerId;
+          const profile = await getProfile(targetId);
+          if (profile) {
+            reset({
+              name: profile.name || profile.fullName || '',
+              companyName: profile.companyName || (profile as any).agencyName || '',
+              companyGst: profile.companyGst || (profile as any).gstNumber || '',
+              companyAddress: profile.companyAddress || (profile as any).officeAddress || '',
+              email: profile.email || '',
+            });
+            if (profile.profilePhotoUrl || (profile as any).avatarUrl) {
+              const url = profile.profilePhotoUrl || (profile as any).avatarUrl;
+              setPhotoUrl(url);
+              if (url && url !== '/uploads/profile-photos/default-avatar.png') {
+                setPhotoUri(url);
+              }
             }
           }
+        } catch (error) {
+          console.warn('Failed to fetch profile:', error);
+        } finally {
+          setLoading(false);
         }
-      } catch (error) {
-        console.warn('Failed to fetch profile:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUserData();
-  }, [reset, user?.id]);
+      };
+
+      fetchUserData();
+    }, [reset, user?.id])
+  );
 
   const onSubmit = async (data: ProfileFormData) => {
     try {
       setSaving(true);
-      await updateProfile(user?.id || '', {
+      const targetId = user?.brokerId || user?.id || '';
+      await updateProfile(targetId, {
         name: data.name,
         fullName: data.name,
         email: data.email,
@@ -127,7 +136,8 @@ export default function ProfileScreen() {
 
       // Save updated photo to profile
       const currentValues = control._formValues;
-      await updateProfile(user?.id || '', {
+      const targetId = user?.brokerId || user?.id || '';
+      await updateProfile(targetId, {
         name: currentValues.name || 'User',
         email: currentValues.email || '',
         profilePhotoUrl: newUrl,
@@ -256,8 +266,8 @@ export default function ProfileScreen() {
                 ) : (
                   <Text style={{ fontSize: 40 }}>👤</Text>
                 )}
-                <TouchableOpacity 
-                  style={styles.editPhotoBadge} 
+                <TouchableOpacity
+                  style={styles.editPhotoBadge}
                   activeOpacity={0.8}
                   onPress={handlePhotoChange}
                 >
@@ -276,7 +286,7 @@ export default function ProfileScreen() {
                   render={({ field: { onChange, onBlur, value } }) => (
                     <InputBox
                       prefix="👤"
-                      placeholder="e.g. Balaji G. Test"
+                      placeholder=""
                       hasError={!!errors.name}
                       value={value}
                       onBlur={onBlur}

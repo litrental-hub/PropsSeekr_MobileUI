@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -58,12 +58,22 @@ export default function RootNavigator() {
   const isLocked = useAuthStore(s => s.isLocked);
   const appPin = useAuthStore(s => s.appPin);
   const setIsLocked = useAuthStore(s => s.setIsLocked);
+  const isIgnoringAppLock = useAuthStore(s => s.isIgnoringAppLock);
+  
+  // Use a ref so the AppState listener always reads the LATEST value
+  // without stale closure issues (the listener is created once, so
+  // it would normally capture the initial value of isIgnoringAppLock forever)
+  const isIgnoringAppLockRef = useRef(isIgnoringAppLock);
+  useEffect(() => {
+    isIgnoringAppLockRef.current = isIgnoringAppLock;
+  }, [isIgnoringAppLock]);
 
   // Background security listener
   useEffect(() => {
     const subscription = AppState.addEventListener('change', nextAppState => {
       // If the app goes to background and we are authenticated and have a PIN, lock it!
-      if (nextAppState.match(/inactive|background/) && isAuthenticated && appPin) {
+      // Read from ref so we always get the latest value (avoids stale closure)
+      if (nextAppState.match(/inactive|background/) && isAuthenticated && appPin && !isIgnoringAppLockRef.current) {
         setIsLocked(true);
       }
     });

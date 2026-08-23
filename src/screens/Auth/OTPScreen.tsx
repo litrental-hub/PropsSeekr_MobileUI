@@ -42,12 +42,30 @@ export default function OTPScreen() {
       setIsLoading(true);
       if (phone) {
         const response = await verifyOTP({ mobileNumber: phone, otpCode: otp });
-        Alert.alert('Verified', response.message || 'Mobile number verified successfully.');
+        
+        if (response.token) {
+          // Log the user in directly!
+          setAuth(
+            {
+              id: response.userId || '',
+              brokerId: response.brokerId,
+              name: response.userName || '',
+              phone: phone,
+              isAadhaarVerified: false,
+              isReraVerified: false,
+            },
+            response.token,
+            response.refreshToken || response.token // fallback if refresh missing
+          );
+        } else {
+          Alert.alert('Verified', response.message || 'Mobile number verified successfully.');
+          navigation.navigate('Login');
+        }
       } else {
         const response = await verifyEmailOTP({ email: emailAddress, otp, purpose: 'EmailVerification' });
         Alert.alert('Verified', response.message || 'Email verified successfully.');
+        navigation.navigate('Login');
       }
-      navigation.navigate('Login');
     } catch (error: any) {
       console.error('Verify OTP Error:', error);
       Alert.alert('Verification Failed', error.response?.data?.message || 'Invalid OTP.');

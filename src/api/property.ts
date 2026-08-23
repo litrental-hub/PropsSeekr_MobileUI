@@ -47,21 +47,22 @@ export const searchProperties = async (data: SearchPropertiesPayload): Promise<S
 
 // ── Property Inventory ──────────────────────────────────────────
 export interface AddListingPayload {
-  propertyType?: string;
-  bhk?: string;
-  buildingName?: string;
-  locality?: string;
-  price?: number | string;
-  areaSqFt?: number | string;
-  isFurnished?: boolean;
-  availableFrom?: string;
-  [key: string]: any;
+  broker_id: number;
+  property_type: string;
+  locality: string;
+  price: number;
+  posted_by: string;
+  requirement_ids: number[];
+  sizes: Array<{ size_sqft: number; bhk: number }>;
 }
 
 export interface AddListingResponse {
+  success?: boolean;
+  listing_id?: number;
+  message?: string;
+  // legacy fallback
   status?: string;
   listingId?: string;
-  message?: string;
 }
 
 export const addListing = async (data: AddListingPayload): Promise<AddListingResponse> => {
@@ -136,3 +137,47 @@ export const uploadBulkTxtFile = async (fileUri: string, fileName: string): Prom
 
   return uploadUrl;
 };
+
+// ── Additional Listing Endpoints (Entire Flow) ───────────────────
+
+export interface IngestWhatsappListingPayload {
+  broker_id: number;
+  property_type: string;
+  locality: string;
+  price: number;
+  raw_message_text: string;
+  source: string;
+  sizes: Array<{ size_sqft: number; bhk?: number }>;
+  city?: string;
+}
+
+export const ingestWhatsappListing = async (data: IngestWhatsappListingPayload) => {
+  const response = await apiClient.post('/listings/whatsapp-intake', data);
+  return response.data;
+};
+
+export const getListingDetails = async (listingId: string | number) => {
+  const response = await apiClient.get(`/listings/${listingId}`);
+  return response.data;
+};
+
+export const linkListingAndRequirement = async (listingId: string | number, requirementId: string | number) => {
+  const response = await apiClient.post(`/listings/${listingId}/requirements/${requirementId}`);
+  return response.data;
+};
+
+export const removeListingRequirementLink = async (listingId: string | number, requirementId: string | number) => {
+  const response = await apiClient.delete(`/listings/${listingId}/requirements/${requirementId}`);
+  return response.data;
+};
+
+export const getListingRequirements = async (listingId: string | number) => {
+  const response = await apiClient.get(`/listings/${listingId}/requirements`);
+  return response.data;
+};
+
+export const getListingMetrics = async () => {
+  const response = await apiClient.get('/listings/metrics');
+  return response.data;
+};
+

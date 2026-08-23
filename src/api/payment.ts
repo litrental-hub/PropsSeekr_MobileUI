@@ -1,11 +1,7 @@
 import apiClient from './client';
 
 export interface CreateOrderPayload {
-  packageId?: string;
-  tokenAmount?: number;
-  amountInRupees?: number;
-  tierId?: string;
-  [key: string]: any;
+  tierId: string;
 }
 
 export interface CreateOrderResponse {
@@ -15,41 +11,73 @@ export interface CreateOrderResponse {
   amount?: number;
   currency?: string;
   keyId?: string;
+  receipt?: string;
   [key: string]: any;
 }
 
 export const createOrder = async (data: CreateOrderPayload): Promise<CreateOrderResponse> => {
-  const response = await apiClient.post<CreateOrderResponse>('/payments/initiate', data);
+  const response = await apiClient.post<CreateOrderResponse>('/payment/order', data);
   return response.data;
 };
 
 export interface VerifyPaymentPayload {
-  razorpayOrderId?: string;
-  razorpayPaymentId?: string;
-  razorpaySignature?: string;
-  RazorpayOrderId?: string;
-  RazorpayPaymentId?: string;
-  RazorpaySignature?: string;
-  [key: string]: any;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
 }
 
 export interface VerifyPaymentResponse {
-  success?: boolean;
-  status?: string;
+  success: boolean;
   message?: string;
   newBalance?: number;
-  creditsBalance?: number;
-  [key: string]: any;
 }
 
 export const verifyPayment = async (data: VerifyPaymentPayload): Promise<VerifyPaymentResponse> => {
-  const payload = {
-    razorpayOrderId: data.razorpayOrderId || data.RazorpayOrderId,
-    razorpayPaymentId: data.razorpayPaymentId || data.RazorpayPaymentId,
-    razorpaySignature: data.razorpaySignature || data.RazorpaySignature,
-    ...data,
-  };
-  const response = await apiClient.post<VerifyPaymentResponse>('/payment/verify', payload);
+  const response = await apiClient.post<VerifyPaymentResponse>('/payment/verify', data);
+  return response.data;
+};
+
+// ── Additional Payment Endpoints (Entire Flow) ───────────────────
+
+export interface CreditPack {
+  id: number;
+  name: string;
+  credits: number;
+  price: number;
+}
+
+export interface GetCreditPacksResponse {
+  success: boolean;
+  packs: CreditPack[];
+}
+
+export const getCreditPacks = async (): Promise<GetCreditPacksResponse> => {
+  const response = await apiClient.get<GetCreditPacksResponse>('/credit-packs');
+  return response.data;
+};
+
+export interface CreateRazorpayOrderPayload {
+  tierId: string;
+}
+
+export const createRazorpayOrder = async (data: CreateRazorpayOrderPayload) => {
+  const response = await apiClient.post('/payment/order', data);
+  return response.data;
+};
+
+export interface MockWebhookPayload {
+  payment_id: number;
+  gateway_txn_id: string;
+  status: string;
+}
+
+export const triggerMockPaymentWebhook = async (data: MockWebhookPayload) => {
+  const response = await apiClient.post('/payments/webhook', data);
+  return response.data;
+};
+
+export const getMockPaymentDetails = async (paymentId: string | number) => {
+  const response = await apiClient.get(`/payments/${paymentId}`);
   return response.data;
 };
 

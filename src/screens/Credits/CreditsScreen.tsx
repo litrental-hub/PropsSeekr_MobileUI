@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -20,7 +21,9 @@ import { UnlockBottomSheet } from './components/UnlockBottomSheet';
 import { ContactRevealedModal } from './components/ContactRevealedModal';
 import { getUnlockedMatches } from '../../api/matches';
 import { getWallet } from '../../api/wallet';
+import { getCreditPacks } from '../../api/payment';
 import { useAuthStore } from '../../store/authStore';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function CreditsScreen() {
   const { colors, isDark } = useAppTheme();
@@ -34,6 +37,7 @@ export default function CreditsScreen() {
   const [revealedVisible, setRevealedVisible] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [unlockedItems, setUnlockedItems] = useState<any[]>([]);
+  const [packs, setPacks] = useState<any[]>([]);
 
   useEffect(() => {
     getUnlockedMatches()
@@ -43,17 +47,59 @@ export default function CreditsScreen() {
         }
       })
       .catch(err => console.log('Failed to fetch unlocked matches history:', err?.message));
-      
-    if (user?.id) {
-      getWallet(user.id)
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      // Fetch wallet balance
+      if (user?.id) {
+        const targetId = user?.brokerId || user?.id || '';
+        getWallet(targetId)
+          .then(res => {
+            if (res && res.free_credits_balance !== undefined) {
+              const total = res.free_credits_balance + (res.paid_credits_balance || 0);
+              setCreditsBalance(total);
+            }
+          })
+          .catch(err => console.log('Failed to fetch wallet:', err?.message));
+      }
+
+      // Fetch credit packs
+      getCreditPacks()
         .then(res => {
-          if (res && res.free_credits_balance !== undefined) {
-            setCreditsBalance(res.free_credits_balance + (res.paid_credits_balance || 0));
+          console.log('CREDIT PACKS RESPONSE:', res);
+          
+          // Handle both { success: true, packs: [] } AND direct array cases
+          const packsArray = res?.packs || (Array.isArray(res) ? res : []);
+          
+          if (packsArray.length > 0) {
+            const mappedPacks = packsArray.map((p: any) => ({
+              id: String(p.id),
+              tierId: `CREDITS_${p.credits}`,
+              name: p.name,
+              credits: p.credits,
+              rateText: `₹${(p.price / p.credits).toFixed(0)} per token`,
+              price: `₹${p.price.toLocaleString('en-IN')}`,
+              saving: p.credits >= 20 ? 'Popular' : null,
+              isPopular: p.credits === 20 || p.name.toLowerCase().includes('growth'),
+              rawPrice: p.price
+            }));
+            setPacks(mappedPacks);
+          } else {
+            console.log('Credit packs array is empty or undefined!');
+            // Fallback mock data if API is returning empty during testing
+            setPacks([
+              { id: '1', tierId: 'CREDITS_10', name: 'Lite Pack', credits: 10, rateText: '₹300 per token', price: '₹3,000', saving: null, isPopular: false, rawPrice: 3000 },
+              { id: '2', tierId: 'CREDITS_20', name: 'Growth Pack', credits: 20, rateText: '₹280 per token', price: '₹5,600', saving: 'Popular', isPopular: true, rawPrice: 5600 },
+              { id: '3', tierId: 'CREDITS_50', name: 'Enterprise Pack', credits: 50, rateText: '₹250 per token', price: '₹12,500', saving: null, isPopular: false, rawPrice: 12500 }
+            ]);
           }
         })
-        .catch(err => console.log('Failed to fetch wallet:', err?.message));
-    }
-  }, [user?.id, setCreditsBalance]);
+        .catch(err => {
+          console.log('Failed to fetch credit packs:', err?.message);
+        });
+    }, [user?.id, user?.brokerId, setCreditsBalance])
+  );
 
   const handleBuy = (pack: any) => {
     setPurchasePack(pack);
@@ -62,6 +108,7 @@ export default function CreditsScreen() {
   const handlePaymentSuccess = (newBalance: number) => {
     setCreditsBalance(newBalance);
     setPurchasePack(null);
+    Alert.alert('Payment Successful', 'Your tokens have been successfully added to your wallet!');
   };
 
   const handleUnlockMock = () => {
@@ -111,7 +158,7 @@ export default function CreditsScreen() {
                 <Text style={styles.lowBalanceTitle}>{t('credits.lowBalanceTitle')}</Text>
                 <Text style={styles.lowBalanceSub}>{t('credits.lowBalanceSub', { balance: creditsBalance })}</Text>
               </View>
-              <TouchableOpacity style={styles.topUpBtn} activeOpacity={0.8} onPress={() => handleBuy(PACKS[1])}>
+              <TouchableOpacity style={styles.topUpBtn} activeOpacity={0.8} onPress={() => handleBuy(packs[1] || packs[0])}>
                 <Text style={styles.topUpBtnText}>{t('credits.topUp')}</Text>
               </TouchableOpacity>
             </View>
@@ -134,7 +181,7 @@ export default function CreditsScreen() {
                   {t('credits.perCredit', { rate: 300 })} (10 pack)
                 </Text>
               </View>
-              <TouchableOpacity style={styles.buyMoreBtn} activeOpacity={0.8} onPress={() => handleBuy(PACKS[1])}>
+              <TouchableOpacity style={styles.buyMoreBtn} activeOpacity={0.8} onPress={() => handleBuy(packs[1] || packs[0])}>
                 <Text style={styles.buyMoreText}>{t('credits.buyMore')}</Text>
               </TouchableOpacity>
             </View>
@@ -190,7 +237,7 @@ export default function CreditsScreen() {
           {/* SECTION 3 - BUY CREDITS PACKS */}
           <Text style={[styles.sectionLabel, { color: colors.textDim }]}>{t('credits.buyPacks')}</Text>
           <View style={styles.packsContainer}>
-            {PACKS.map((pack, idx) => {
+            {packs.map((pack, idx) => {
               const isPopular = pack.isPopular;
               return (
                 <View key={pack.id} style={[

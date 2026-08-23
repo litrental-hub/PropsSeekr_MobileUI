@@ -45,10 +45,7 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
 
       // 1. Create order on backend with documented master schema
       const orderRes = await createOrder({ 
-        tierId: pack.tierId || pack.id || `token_pkg_${pack.credits || 5}`,
-        packageId: pack.tierId || pack.id || `token_pkg_${pack.credits || 5}`,
-        tokenAmount: Number(pack.credits) || 5,
-        amountInRupees: total,
+        tierId: pack.tierId || `CREDITS_${pack.credits || 10}`,
       });
 
       // 2. Setup Razorpay options
@@ -68,17 +65,20 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
         theme: { color: '#10B981' },
       };
 
+      // Set ignoring lock before opening Razorpay Native Activity so we aren't asked for PIN when returning
+      useAuthStore.getState().setIsIgnoringAppLock(true);
+      
       // 3. Open Razorpay Checkout
       const data = await RazorpayCheckout.open(options);
 
-      // 4. Verify Payment on Backend with exact camelCase schema
+      // Restore lock right away
+      useAuthStore.getState().setIsIgnoringAppLock(false);
+
+      // 4. Verify Payment on Backend with exact snake_case schema
       const verifyRes = await verifyPayment({
-        razorpayOrderId: data.razorpay_order_id,
-        razorpayPaymentId: data.razorpay_payment_id,
-        razorpaySignature: data.razorpay_signature,
-        RazorpayOrderId: data.razorpay_order_id,
-        RazorpayPaymentId: data.razorpay_payment_id,
-        RazorpaySignature: data.razorpay_signature,
+        razorpay_order_id: data.razorpay_order_id,
+        razorpay_payment_id: data.razorpay_payment_id,
+        razorpay_signature: data.razorpay_signature,
       });
 
       const isSuccessful = verifyRes.success || verifyRes.status === 'SUCCESS' || verifyRes.status === 'success' || verifyRes.newBalance !== undefined || verifyRes.creditsBalance !== undefined;
@@ -90,6 +90,9 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
         throw new Error(verifyRes.message || 'Payment verification failed');
       }
     } catch (error: any) {
+      // Restore lock if payment failed/cancelled
+      useAuthStore.getState().setIsIgnoringAppLock(false);
+      
       console.log('Payment Error:', error);
       console.log('Backend Error Body:', error?.response?.data);
       

@@ -3,9 +3,15 @@ import apiClient from './client';
 // ── Registration ────────────────────────────────────────────────────────
 export interface RegisterPayload {
   name: string;
-  phone: string;
-  locality: string;
-  brokerageName: string;
+  mobile: string;
+  email?: string;
+  password?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  aadharNumber?: string;
+  panCard?: string;
 }
 
 export interface RegisterResponse {
@@ -14,7 +20,24 @@ export interface RegisterResponse {
 }
 
 export const register = async (data: RegisterPayload): Promise<RegisterResponse> => {
-  const response = await apiClient.post<RegisterResponse>('/brokers/register', data);
+  const response = await apiClient.post<RegisterResponse>('/auth/register', data);
+  return response.data;
+};
+
+// ── Admin Login ──────────────────────────────────────────────────────────
+export interface AdminLoginPayload {
+  userName?: string;
+  password?: string;
+}
+
+export interface AdminLoginResponse {
+  token: string;
+  expiresAt: string;
+  userName: string;
+}
+
+export const adminLogin = async (data: AdminLoginPayload): Promise<AdminLoginResponse> => {
+  const response = await apiClient.post<AdminLoginResponse>('/auth/admin-login', data);
   return response.data;
 };
 
@@ -30,8 +53,9 @@ export interface UserDTO {
   mobileNumber: string;
   email: string;
   isMobileVerified: boolean;
-  isEmailVerified: boolean;
+  isEmailVerified?: boolean;
   credits: number;
+  brokerId?: number;
 }
 
 export interface LoginResponse {
@@ -40,7 +64,13 @@ export interface LoginResponse {
   token: string;
   refreshToken: string;
   expiresAt: string;
-  user: UserDTO;
+  user?: UserDTO;
+  broker?: {
+    broker_id: string | number;
+    name: string;
+    mobile: string;
+    email?: string;
+  };
 }
 
 export const login = async (data: LoginPayload): Promise<LoginResponse> => {
@@ -105,6 +135,12 @@ export interface VerifyOTPPayload {
 export interface VerifyOTPResponse {
   success: boolean;
   message: string;
+  token?: string;
+  refreshToken?: string;
+  expiresAt?: string;
+  userId?: string;
+  userName?: string;
+  brokerId?: number;
 }
 
 export const verifyOTP = async (data: VerifyOTPPayload): Promise<VerifyOTPResponse> => {

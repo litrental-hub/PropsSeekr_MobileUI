@@ -1,40 +1,22 @@
 import apiClient from './client';
 
+// ── Contact shape returned after a successful reveal ──────────────
 export interface UnlockedContact {
   ownerName: string;
   ownerMobile: string;
-  ownerEmail: string;
+  ownerEmail: string | null;
 }
 
-export interface UnlockMatchPayload {
-  propertyRequestId: string;
-  initiatorPropertyRequestId?: string;
-}
-
-export interface UnlockMatchResponse {
-  success: boolean;
-  message: string;
-  creditsRemaining: number;
-  unlockedContact: UnlockedContact;
-}
-
-export interface ConfirmMatchPayload {
-  isAvailable: boolean;
-  isPriceValid: boolean;
-  isPriceNegotiable: boolean;
-  readyToConnect: boolean;
-}
-
-export interface ConfirmMatchResponse {
-  match_id?: number | string;
-  state?: string;
-  window_expires_at?: string;
-  message?: string;
-}
-
+// ── Match DTO from GET /user-matches ─────────────────────────────
 export interface MatchDTO {
   id?: string;
   _id?: string;
+  matchId?: number;        // canonical integer from matches.matchid
+  matchid?: number;        // alternate casing from backend
+  state?: string;          // 'matched' | 'pending_confirmation' | 'confirmed' | 'expired'
+  currentBrokerConfirmed?: boolean;
+  windowExpiresAt?: string | null;
+  isRevealed?: boolean;
   propertyId?: string;
   propertyTitle?: string;
   matchScore?: number;
@@ -46,7 +28,7 @@ export interface MatchDTO {
   city?: string;
   price?: any;
   createdAt?: string;
-  unlockStatus?: 'NONE' | 'PENDING' | 'REQUESTED' | 'UNLOCKED' | 'locked' | 'pending' | 'matched' | 'matched and confirmed' | string;
+  unlockedContact?: UnlockedContact | null;
   notificationId?: string;
   initiatorPropertyRequestId?: string;
   [key: string]: any;
@@ -85,7 +67,6 @@ export const getMatches = async (userId: string, page: number = 1, limit: number
       ? responsePayload
       : (responsePayload?.data || responsePayload?.matches || responsePayload?.items || responsePayload?.result || []);
 
-    // Map backend format to UI format
     return {
       matches: matchesList,
       pagination: {
@@ -101,16 +82,58 @@ export const getMatches = async (userId: string, page: number = 1, limit: number
   }
 };
 
-export const unlockContact = async (matchId: string | number, data: UnlockMatchPayload): Promise<UnlockMatchResponse> => {
-  const response = await apiClient.post<UnlockMatchResponse>(`/matches/${matchId}/reveal`, data);
+// ── Step 1: Confirm & Connect (both brokers call this) ────────────
+// Broker A calling this initiates the unlock (state → pending_confirmation)
+// Broker B calling this completes the handshake (state → confirmed)
+export interface ConfirmMatchPayload {
+  matchId: number;
+  brokerId: number;
+  availabilityConfirmed: boolean;
+  priceValid: boolean;
+  priceNegotiable: boolean;
+  readyToConnect: boolean;
+}
+
+export interface ConfirmMatchResponse {
+  success?: boolean;
+  message?: string;
+  matchId?: number;
+  state?: string;           // 'pending_confirmation' | 'confirmed'
+  windowExpiresAt?: string; // ISO timestamp — show countdown to Broker A
+  creditsRequired?: number;
+}
+
+export const confirmMatch = async (matchId: number, data: ConfirmMatchPayload): Promise<ConfirmMatchResponse> => {
+  const response = await apiClient.post<ConfirmMatchResponse>(
+    `/user-matches/matches/${matchId}/confirm`,
+    data
+  );
   return response.data;
 };
 
-export const confirmMatch = async (matchId: string | number, data: ConfirmMatchPayload): Promise<ConfirmMatchResponse> => {
-  const response = await apiClient.post<ConfirmMatchResponse>(`/matches/${matchId}/confirm`, data);
+// ── Step 2: Reveal contacts (called after both confirmations) ─────
+// Idempotent: safe to retry; will NOT deduct credits again if already revealed
+export interface RevealMatchPayload {
+  matchId: number;
+  brokerId: number;
+}
+
+export interface RevealMatchResponse {
+  success: boolean;
+  message?: string;
+  creditsRemaining?: number;
+  unlockedContact: UnlockedContact | null;
+}
+
+export const revealMatch = async (matchId: number, data: RevealMatchPayload): Promise<RevealMatchResponse> => {
+  const response = await apiClient.post<RevealMatchResponse>(
+    `/user-matches/matches/${matchId}/reveal`,
+    data
+  );
   return response.data;
 };
 
+// ── Unlocked matches history (Credits screen) ────────────────────
 export interface GetUnlockedMatchesResponse {
   success?: boolean;
   data?: any[];
@@ -123,10 +146,5 @@ export const getUnlockedMatches = async (): Promise<any[]> => {
   const resData: any = response.data;
   if (Array.isArray(resData)) return resData;
   return resData?.data || resData?.matches || resData?.items || [];
-};
-
-export const acceptUnlockRequest = async (notificationId: string, userId: string): Promise<any> => {
-  const response = await apiClient.post(`/notifications/${encodeURIComponent(notificationId)}/unlock-broker?userId=${encodeURIComponent(userId)}`);
-  return response.data;
 };
 

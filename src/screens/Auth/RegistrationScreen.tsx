@@ -62,9 +62,15 @@ export default function RegistrationScreen() {
       setIsLoading(true);
       const payload: any = {
         name: data.name.trim(),
-        phone: data.mobile.trim(),
-        locality: `${data.addressLine1.trim()}, ${data.city.trim()}`,
-        brokerageName: `${data.name.trim()} Real Estate`, // Fallback since UI doesn't have brokerageName yet
+        mobile: data.mobile.trim(),
+        email: data.email.trim(),
+        password: data.password,
+        addressLine1: data.addressLine1.trim(),
+        city: data.city.trim(),
+        state: data.state.trim(),
+        pincode: data.pincode.trim(),
+        aadharNumber: data.aadhaar.trim(),
+        panCard: data.pan.trim()
       };
       
       const response = await register(payload);

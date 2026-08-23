@@ -28,3 +28,29 @@ export const getMyRequirements = async (page: number = 1, limit: number = 20) =>
   });
   return response.data;
 };
+
+// ── Additional Requirement Endpoints (Entire Flow) ───────────────────
+
+export interface CreateRequirementPayload {
+  broker_id: number;
+  requirement_type: string;
+  property_type: string;
+  budget: number;
+  budget_unit: string;
+  size: number;
+  locality_ids: number[];
+  configurations: string[];
+  posted_by?: string;
+  listing_ids?: number[];
+  city?: string;
+}
+
+export const createRequirement = async (data: CreateRequirementPayload) => {
+  const response = await apiClient.post('/requirements', data);
+  return response.data;
+};
+
+export const getRequirementListings = async (requirementId: string | number) => {
+  const response = await apiClient.get(`/requirements/${requirementId}/listings`);
+  return response.data;
+};
