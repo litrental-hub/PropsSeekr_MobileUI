@@ -1,0 +1,21 @@
+node:internal/fs/watchers:331
+    throw error;
+    ^
+
+Error: ENOENT: no such file or directory, watch 'C:\Users\Aman Jain\StudioProjects\PropsSeekr_MobileUI\node_modules\react-native-worklets\android\.cxx\Debug\541a2o67\armeabi-v7a\CMakeFiles\CMakeTmp\CMakeFiles\cmTC_36bdd.dir'
+    at FSWatcher.<computed> (node:internal/fs/watchers:323:19)
+    at Object.watch (node:fs:2609:36)
+    at #watchdir (C:\Users\Aman Jain\StudioProjects\PropsSeekr_MobileUI\node_modules\metro-file-map\src\watchers\FallbackWatcher.js:133:33)
+    at C:\Users\Aman Jain\StudioProjects\PropsSeekr_MobileUI\node_modules\metro-file-map\src\watchers\FallbackWatcher.js:233:31
+    at Walker.<anonymous> (C:\Users\Aman Jain\StudioProjects\PropsSeekr_MobileUI\node_modules\metro-file-map\src\watchers\FallbackWatcher.js:378:5)
+    at Walker.emit (node:events:509:28)
+    at C:\Users\Aman Jain\StudioProjects\PropsSeekr_MobileUI\node_modules\walker\lib\walker.js:69:16
+    at FSReqCallback.oncomplete (node:fs:188:23) {
+  errno: -4058,
+  syscall: 'watch',
+  code: 'ENOENT',
+  path: 'C:\\Users\\Aman Jain\\StudioProjects\\PropsSeekr_MobileUI\\node_modules\\react-native-worklets\\android\\.cxx\\Debug\\541a2o67\\armeabi-v7a\\CMakeFiles\\CMakeTmp\\CMakeFiles\\cmTC_36bdd.dir',
+  filename: 'C:\\Users\\Aman Jain\\StudioProjects\\PropsSeekr_MobileUI\\node_modules\\react-native-worklets\\android\\.cxx\\Debug\\541a2o67\\armeabi-v7a\\CMakeFiles\\CMakeTmp\\CMakeFiles\\cmTC_36bdd.dir'
+}
+
+Node.js v24.19.0

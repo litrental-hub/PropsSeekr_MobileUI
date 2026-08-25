@@ -108,6 +108,8 @@ export default function MyPropertiesScreen() {
   const [properties, setProperties] = useState<any[]>(MOCK_MY_PROPERTIES);
   const [loadingReq, setLoadingReq] = useState(false);
   const [loadingProp, setLoadingProp] = useState(false);
+  const [expandedListingId, setExpandedListingId] = useState<string | null>(null);
+  const [expandedRequirementId, setExpandedRequirementId] = useState<string | null>(null);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -124,9 +126,7 @@ export default function MyPropertiesScreen() {
       setLoadingProp(true);
       const res = await getMyListings(1, 20);
       const list = (res as any)?.listings || (res as any)?.data || (Array.isArray(res) ? res : []);
-      if (list && list.length > 0) {
-        setProperties(list);
-      }
+      setProperties(list);
     } catch (err) {
       console.log('Error fetching properties:', err);
     } finally {
@@ -181,7 +181,12 @@ export default function MyPropertiesScreen() {
       <View style={[styles.cardFooter, { borderTopColor: Brand.blueBorder }]}>
         <View style={styles.statsRow}>
           <Text style={[styles.statText, { color: colors.textDim }]}>👁️ {item.views || 0} {t('myProperties.views')}</Text>
-          <Text style={[styles.statText, { color: colors.textDim }]}>🤝 {item.matches || item.leads || 0} {t('myProperties.matches')}</Text>
+          <TouchableOpacity
+            onPress={() => setExpandedListingId(expandedListingId === (item.id || item.listingId) ? null : (item.id || item.listingId))}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.statText, { color: colors.textDim }]}>🤝 {item.matchesFound ?? item.matches ?? item.leads ?? 0} {t('myProperties.matches')}</Text>
+          </TouchableOpacity>
         </View>
         
         <TouchableOpacity style={styles.editBtn} activeOpacity={0.7} onPress={() => navigation.navigate('AddProperty', { editId: item.id || item.listingId, initialData: item })}>
@@ -189,6 +194,7 @@ export default function MyPropertiesScreen() {
           <Text style={[styles.editBtnText, { color: Brand.teal }]}>{t('myProperties.edit')}</Text>
         </TouchableOpacity>
       </View>
+      {expandedListingId === (item.id || item.listingId) && renderMatchedChildren(item.matches, 'listing')}
     </View>
   );
 
@@ -210,14 +216,50 @@ export default function MyPropertiesScreen() {
       <Text style={[styles.cardPrice, { color: Brand.teal }]}>{t('myProperties.budget')} {formatPrice(item.budget || item.budgetMax || 'N/A')}</Text>
 
       <View style={[styles.cardFooter, { borderTopColor: Brand.blueBorder }]}>
-        <Text style={[styles.statText, { color: Brand.blue }]}>🤝 {item.matchesFound || 0} {t('myProperties.matches')}</Text>
+        <TouchableOpacity
+          onPress={() => setExpandedRequirementId(expandedRequirementId === item.id ? null : item.id)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.statText, { color: Brand.blue }]}>🤝 {item.matchesFound || 0} {t('myProperties.matches')}</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.editBtn} activeOpacity={0.7} onPress={() => navigation.navigate('AddRequirement', { editId: item.id, initialData: item })}>
           <MaterialCommunityIcons name="pencil-outline" size={18} color={Brand.teal} />
           <Text style={[styles.editBtnText, { color: Brand.teal }]}>{t('myProperties.edit')}</Text>
         </TouchableOpacity>
       </View>
+      {expandedRequirementId === item.id && renderMatchedChildren(item.matches, 'requirement')}
     </View>
   );
+
+  const renderMatchedChildren = (matches: any[] | undefined, parentType: 'listing' | 'requirement') => {
+    if (!matches?.length) {
+      return <Text style={[styles.noMatchesText, { color: colors.textDim }]}>No matches yet</Text>;
+    }
+
+    return (
+      <View style={[styles.matchesContainer, { borderLeftColor: Brand.teal }]}>
+        {matches.map(match => (
+          <TouchableOpacity
+            key={match.matchId}
+            style={[styles.matchChild, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
+            activeOpacity={0.75}
+            onPress={() => navigation.navigate('MatchDetail', { matchId: String(match.matchId) })}
+          >
+            <View style={styles.matchChildHeader}>
+              <Text style={[styles.matchChildType, { color: Brand.teal }]}>
+                {parentType === 'listing' ? 'Matching requirement' : 'Matching listing'}
+              </Text>
+              <Text style={[styles.matchScore, { color: Brand.blue }]}>{Math.round(match.matchScore || 0)}%</Text>
+            </View>
+            <Text style={[styles.matchChildTitle, { color: colors.textPrimary }]}>{match.title || 'Matched property'}</Text>
+            <Text style={[styles.matchChildMeta, { color: colors.textSecondary }]}>
+              {match.locality || match.city || 'Location not specified'} · {formatPrice(match.priceOrBudget || 0)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.navy }]}>
@@ -524,6 +566,43 @@ const styles = StyleSheet.create({
   },
   footerSpacer: {
     height: 40,
+  },
+  matchesContainer: {
+    marginTop: 14,
+    marginLeft: 8,
+    paddingLeft: 12,
+    borderLeftWidth: 2,
+    gap: 8,
+  },
+  noMatchesText: {
+    marginTop: 12,
+    fontSize: 12,
+  },
+  matchChild: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+  },
+  matchChildHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  matchChildType: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  matchScore: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  matchChildTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  matchChildMeta: {
+    marginTop: 3,
+    fontSize: 12,
   },
   toggleRow: {
     paddingHorizontal: 16,

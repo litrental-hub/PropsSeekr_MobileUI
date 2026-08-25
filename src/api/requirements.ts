@@ -23,7 +23,7 @@ export const addRequirement = async (data: RequirementPayload) => {
 };
 
 export const getMyRequirements = async (page: number = 1, limit: number = 20) => {
-  const response = await apiClient.get('/requirements/mine', {
+  const response = await apiClient.get('/inventory/my-requirements', {
     params: { page, limit },
   });
   return response.data;

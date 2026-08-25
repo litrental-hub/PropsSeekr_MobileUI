@@ -95,7 +95,7 @@ export interface GetMyListingsResponse {
 }
 
 export const getMyListings = async (page = 1, limit = 20): Promise<GetMyListingsResponse | PropertyListingItem[]> => {
-  const response = await apiClient.get<GetMyListingsResponse | PropertyListingItem[]>(`/property-inventory/my-listings?page=${page}&limit=${limit}`);
+  const response = await apiClient.get<GetMyListingsResponse | PropertyListingItem[]>(`/inventory/my-listings?page=${page}&limit=${limit}`);
   return response.data;
 };
 
