@@ -151,13 +151,13 @@
     "moreDetails": "More Details"
   },
   "myProperties": {
-    "title": "My Properties",
+    "title": "My Listings",
     "addPropertyBtn": "+ Property",
     "addRequirementBtn": "+ Requirement",
     "views": "views",
     "matches": "matches",
     "edit": "Edit",
-    "clientReq": "Client Requirement",
+    "clientReq": "My Requirement",
     "budget": "Budget:",
     "noProperties": "No properties listed yet.",
     "noRequirements": "No requirements posted yet."

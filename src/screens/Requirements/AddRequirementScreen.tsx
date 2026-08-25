@@ -60,6 +60,37 @@ function isValidIndianPhone(phone: string): boolean {
   return /^[6-9]\d{9}$/.test(phone);
 }
 
+function propertyCategory(propertyType: string): string {
+  if (propertyType.startsWith('Commercial') || propertyType === 'Warehouse') return 'COMMERCIAL';
+  if (propertyType === 'Plot / Land') return 'LAND';
+  return 'RESIDENTIAL';
+}
+
+function backendPropertyType(propertyType: string): string {
+  const values: Record<string, string> = {
+    'Flat / Apartment': 'APARTMENT',
+    'Independent House': 'INDEPENDENT_HOUSE',
+    Villa: 'BUNGALOW',
+    'Plot / Land': 'PLOT',
+    'Commercial Office': 'OFFICE',
+    'Commercial Shop': 'SHOP',
+    Warehouse: 'WAREHOUSE',
+    'PG / Hostel': 'PG',
+  };
+  return values[propertyType] ?? propertyType.trim().toUpperCase().replace(/[ /]+/g, '_');
+}
+
+function areaInSquareFeet(value: string, unit: string): number {
+  const factors: Record<string, number> = {
+    'Sq Ft': 1,
+    'Sq Yd': 9,
+    'Sq M': 10.7639,
+    Acre: 43560,
+    Hectare: 107639,
+  };
+  return Math.round(Number(value) * (factors[unit] ?? 1));
+}
+
 // ─── Pill Selector Component ──────────────────────────────────────────────────
 
 function PillGroup<T extends string>({
@@ -286,6 +317,11 @@ export default function AddRequirementScreen() {
     }
     if (!propertyType) newErrors.propertyType = 'Please select a property type.';
     if (!location.trim()) newErrors.location = 'Location is required.';
+    if (!size || Number(size) <= 0) newErrors.size = 'Required area must be greater than zero.';
+    if (!maxPrice || Number(maxPrice) <= 0) newErrors.maxPrice = 'Maximum budget must be greater than zero.';
+    if (minPrice && maxPrice && Number(minPrice) > Number(maxPrice)) {
+      newErrors.maxPrice = 'Maximum budget must be greater than or equal to minimum budget.';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -332,28 +368,29 @@ export default function AddRequirementScreen() {
       return;
     }
 
-    const normalizedPhone = normalizePhone(contactNumber);
-    const minPriceNum = minPrice ? Number(minPrice) : undefined;
-    const maxPriceNum = maxPrice ? Number(maxPrice) : undefined;
+    const maxPriceNum = Number(maxPrice);
     const isRental = listingType === 'RENT';
 
     const finalConfiguration = configuration === 'Other' ? customConfiguration.trim() : configuration;
+    const lookingFor = `Wants to ${isRental ? 'Rent' : 'Buy'} ${finalConfiguration ? finalConfiguration + ' ' : ''}${propertyType}`;
+    const locality = location.trim();
 
-    const payload: Record<string, any> = {
-      userId: user?.id,
-      lookingFor: `Wants to ${isRental ? 'Rent' : 'Buy'} ${finalConfiguration ? finalConfiguration + ' ' : ''}${propertyType}`,
-      listingType: listingType,
-      propertyType: propertyType,
-      configuration: finalConfiguration,
-      location: location.trim(),
-      latitude: lat,
-      longitude: lng,
+    const payload = {
+      transactionType: isRental ? 'RENTAL' as const : 'BUY_SELL' as const,
+      category: propertyCategory(propertyType),
+      propertyType: backendPropertyType(propertyType),
+      configurations: finalConfiguration ? [finalConfiguration] : [],
+      description: lookingFor,
+      budgetMax: maxPriceNum,
+      minimumSize: areaInSquareFeet(size, sizeUnit),
+      city: locality.split(',').pop()?.trim() || locality,
+      locality,
+      lat,
+      lng,
       radiusKm: 5.0,
-      budget: maxPriceNum ? `₹${(maxPriceNum/1000).toFixed(0)}k${isRental ? '/month' : ''}` : undefined,
-      minBudgetNumeric: minPriceNum,
-      maxBudgetNumeric: maxPriceNum,
-      clientNotes: description.trim() || undefined,
-      city: location.trim().split(',').pop()?.trim() || 'Unknown',
+      furnishingPreference: furnishing || undefined,
+      facingPreference: facing || undefined,
+      additionalNotes: description.trim() || undefined,
     };
 
     try {
@@ -369,12 +406,16 @@ export default function AddRequirementScreen() {
         Alert.alert('Not Saved', 'Requirement could not be saved. Please try again.');
       }
     } catch (error: any) {
-      const msg =
-        error.response?.data?.message ||
-        error.response?.data?.error ||
-        error.message ||
-        'Network error. Please check your connection.';
-      Alert.alert(`Submission Failed`, msg);
+      console.error('Add Requirement Error:', error);
+      console.error('Error Response:', error.response?.data);
+      console.error('Error Status:', error.response?.status);
+
+      let msg = error.message || 'Network error. Please check your connection.';
+      if (error.response?.data) {
+        msg = error.response.data.message || error.response.data.error || JSON.stringify(error.response.data);
+      }
+      
+      Alert.alert(`Submission Failed`, `${msg} (Status: ${error.response?.status || 'None'})`);
     } finally {
       setIsSubmitting(false);
     }
@@ -540,16 +581,19 @@ export default function AddRequirementScreen() {
               </FieldWrap>
 
               {/* Size row */}
-              <FieldWrap label="Required Area" colors={colors}>
+              <FieldWrap label="Required Area" required error={errors.size} colors={colors}>
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                   {/* Numeric area input */}
                   <TextInput
                     ref={sizeRef}
-                    style={[getInputStyle(false, colors), { flex: 1 }]}
+                    style={[getInputStyle(!!errors.size, colors), { flex: 1 }]}
                     placeholder="e.g. 1200"
                     placeholderTextColor={colors.textDim}
                     value={size}
-                    onChangeText={setSize}
+                    onChangeText={value => {
+                      setSize(value);
+                      if (errors.size) setErrors(previous => ({ ...previous, size: '' }));
+                    }}
                     keyboardType="numeric"
                     returnKeyType="next"
                     onSubmitEditing={() => priceRef.current?.focus()}
@@ -614,11 +658,11 @@ export default function AddRequirementScreen() {
                 </Modal>
               </FieldWrap>
 
-              <FieldWrap label="Budget Range (₹)" colors={colors}>
+              <FieldWrap label="Budget Range (₹)" required error={errors.maxPrice} colors={colors}>
                 <View style={{ flexDirection: 'row', gap: 12 }}>
                   <View style={{ flex: 1 }}>
                     <TextInput
-                      style={getInputStyle(false, colors)}
+                      style={getInputStyle(!!errors.maxPrice, colors)}
                       placeholder="Min (e.g. 20000)"
                       placeholderTextColor={colors.textDim}
                       value={minPrice}
@@ -640,7 +684,10 @@ export default function AddRequirementScreen() {
                       placeholder="Max (e.g. 50000)"
                       placeholderTextColor={colors.textDim}
                       value={maxPrice}
-                      onChangeText={setMaxPrice}
+                      onChangeText={value => {
+                        setMaxPrice(value);
+                        if (errors.maxPrice) setErrors(previous => ({ ...previous, maxPrice: '' }));
+                      }}
                       keyboardType="numeric"
                       returnKeyType="next"
                       onSubmitEditing={() => projectRef.current?.focus()}

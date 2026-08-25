@@ -64,6 +64,7 @@ export function PropertyDetailsSection({ themeColor }: { themeColor: string }) {
   }
 
   const isHouse = state.propertyType === 'Independent House' || state.propertyType === 'Bungalow/Villa';
+  const isLand = ['Plot/Land', 'Agricultural Land'].includes(String(state.propertyType));
 
   return (
     <>
@@ -86,7 +87,7 @@ export function PropertyDetailsSection({ themeColor }: { themeColor: string }) {
       {expanded && (
         <View style={styles.content}>
           {/* COMMON PHYSICAL DETAILS */}
-          {state.propertyType !== 'Plot/Land' && state.propertyType !== 'Agricultural Land' && (
+          {!isLand && (
             <>
               <FormInput
                 label="Floor Number"
@@ -152,7 +153,7 @@ export function PropertyDetailsSection({ themeColor }: { themeColor: string }) {
           )}
 
           {/* AMENITIES */}
-          {state.propertyType !== 'Plot/Land' && state.propertyType !== 'Agricultural Land' && (
+          {!isLand && (
             <>
               <Text style={[styles.label, { marginTop: 16 }]}>Amenities</Text>
               <View style={styles.amenitiesGrid}>

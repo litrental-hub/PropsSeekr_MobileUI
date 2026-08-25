@@ -1,30 +1,35 @@
 import apiClient from './client';
 
 export interface RequirementPayload {
-  userId?: string;
-  lookingFor?: string;
-  listingType?: string;
-  propertyType?: string;
-  configuration?: string;
-  location?: string;
-  latitude?: number;
-  longitude?: number;
-  radiusKm?: number;
-  budget?: string;
-  minBudgetNumeric?: number;
-  maxBudgetNumeric?: number;
-  clientNotes?: string;
-  city?: string;
+  transactionType: 'RENTAL' | 'BUY_SELL';
+  category: string;
+  propertyType: string;
+  configurations: string[];
+  description: string;
+  budgetMax: number;
+  minimumSize: number;
+  city: string;
+  locality: string;
+  lat: number;
+  lng: number;
+  radiusKm: number;
+  furnishingPreference?: string;
+  facingPreference?: string;
+  additionalNotes?: string;
 }
 
 export const addRequirement = async (data: RequirementPayload) => {
-  const response = await apiClient.post('/requirements/add', data);
+  const response = await apiClient.post('/requirements', data);
   return response.data;
 };
 
-export const getMyRequirements = async (page: number = 1, limit: number = 20) => {
+export const getMyRequirements = async (
+  page: number = 1,
+  limit: number = 20,
+  transactionType?: 'RENTAL' | 'BUY_SELL',
+) => {
   const response = await apiClient.get('/requirements/mine', {
-    params: { page, limit },
+    params: { page, limit, transactionType },
   });
   return response.data;
 };
@@ -45,8 +50,8 @@ export interface CreateRequirementPayload {
   city?: string;
 }
 
-export const createRequirement = async (data: CreateRequirementPayload) => {
-  const response = await apiClient.post('/requirements', data);
+export const createRequirement = async (payload: CreateRequirementPayload) => {
+  const response = await apiClient.post('/requirements/create', payload);
   return response.data;
 };
 

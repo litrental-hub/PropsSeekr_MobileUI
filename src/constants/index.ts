@@ -107,9 +107,7 @@ export const CREDIT_PACKS = [
 // Dev:  Android emulator uses 10.0.2.2 to reach host machine localhost
 //       .NET 9 default HTTP port is 5079 (or 7079 for HTTPS)
 // Prod: Update to your Azure / AWS / VPS domain
-export const API_BASE_URL = __DEV__
-  ? 'https://pr-bcac82da45b24e66bd200af09afde77b.ecs.ap-south-1.on.aws/api/v1'   // Dev Backend API
-  : 'https://pr-bcac82da45b24e66bd200af09afde77b.ecs.ap-south-1.on.aws/api/v1';  // Production (AWS ECS)
+export const API_BASE_URL = 'https://pr-bcac82da45b24e66bd200af09afde77b.ecs.ap-south-1.on.aws/api/v1';  // Production (AWS ECS)
 
 // Storage Keys
 export const STORAGE_KEYS = {

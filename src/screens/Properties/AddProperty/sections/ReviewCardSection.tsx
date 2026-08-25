@@ -132,9 +132,18 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
     // --- Build the new API payload (snake_case to match backend schema) ---
     const payload = {
       broker_id: Number(user?.brokerId) || 0,
+      listing_type: state.transactionType === 'Rent' ? 'RENT' as const : 'SELL' as const,
       property_type: backendPropertyType,
       locality: state.areaLocality || state.city || 'Unknown',
       price: priceNum,
+      price_unit: state.transactionType === 'Rent' ? 'PER_MONTH' : 'INR',
+      configuration: state.bhk || (bedroomsNum > 0 ? `${bedroomsNum} BHK` : undefined),
+      size: areaNum,
+      furnishing: state.furnishingStatus || undefined,
+      facing: state.facing || undefined,
+      project_name: state.societyColonyName || state.areaLocality || undefined,
+      city: state.city || undefined,
+      raw_message_text: state.additionalNotes || undefined,
       posted_by: 'BROKER',
       requirement_ids: [] as number[],
       sizes: [
@@ -155,9 +164,9 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
           `Your property has been submitted (ID: ${res.listing_id || 'N/A'}) and automated matchmaking has begun.`,
           [
             {
-              text: 'View My Properties',
+              text: 'View My Listings',
               onPress: () => {
-                navigation.navigate('MainTabs' as any, { screen: 'MyProperties' } as any);
+                navigation.navigate('MainTabs' as never, { screen: 'MyProperties' } as never);
               }
             }
           ]

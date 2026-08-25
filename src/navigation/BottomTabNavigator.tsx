@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet } from 'react-native';
+import { AppState, View, Text, StyleSheet } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
-import { FontSize, FontWeight } from '../constants/theme';
+import { FontWeight } from '../constants/theme';
 import { useAppStore } from '../store/appStore';
+import { useAuthStore } from '../store/authStore';
+import { getNotifications } from '../api/notifications';
+import { invalidateWalletRequests, refreshWallet } from '../services/walletSync';
 
 // Tab Screens
 import DashboardScreen from '../screens/Dashboard/DashboardScreen';
@@ -16,7 +19,7 @@ import ProfileScreen from '../screens/Profile/ProfileScreen';
 
 export type BottomTabParamList = {
   Dashboard: undefined;
-  Matches: undefined;
+  Matches: { property?: any; selectedProperty?: any; matchId?: number } | undefined;
   MyProperties: undefined;
   Credits: undefined;
   Profile: undefined;
@@ -30,7 +33,7 @@ interface TabIconProps {
   label: string;
   focused: boolean;
   badge?: number;
-  balance?: number;
+  balance?: number | null;
 }
 
 function TabIcon({ iconName, iconNameFocused, label, focused, badge, balance }: TabIconProps) {
@@ -39,7 +42,7 @@ function TabIcon({ iconName, iconNameFocused, label, focused, badge, balance }: 
       <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
         {balance !== undefined ? (
           <Text style={{ fontSize: 16, fontWeight: '800', color: focused ? Colors.brandTeal : Colors.textMuted }}>
-            {balance}
+            {balance === null ? '—' : balance}
           </Text>
         ) : (
           <MaterialCommunityIcons 
@@ -62,8 +65,51 @@ function TabIcon({ iconName, iconNameFocused, label, focused, badge, balance }: 
 export default function BottomTabNavigator() {
   const unseenMatches = useAppStore(s => s.unseenMatches);
   const unreadNotifications = useAppStore(s => s.unreadNotifications);
+  const setUnreadNotifications = useAppStore(s => s.setUnreadNotifications);
   const creditsBalance = useAppStore(s => s.creditsBalance);
+  const walletBrokerId = useAppStore(s => s.walletBrokerId);
+  const brokerId = useAuthStore(s => s.user?.brokerId);
   const insets = useSafeAreaInsets();
+
+  const refreshUnreadNotifications = useCallback(async () => {
+    if (!brokerId) return;
+    try {
+      const response = await getNotifications(brokerId, 1, 1, 'ALL');
+      setUnreadNotifications(response.unreadCount);
+    } catch (error) {
+      console.warn('Could not refresh notification badge.', error);
+    }
+  }, [brokerId, setUnreadNotifications]);
+
+  useEffect(() => {
+    refreshUnreadNotifications();
+    const timer = setInterval(refreshUnreadNotifications, 30000);
+    return () => clearInterval(timer);
+  }, [refreshUnreadNotifications]);
+
+  useEffect(() => {
+    if (!brokerId) {
+      invalidateWalletRequests();
+      return;
+    }
+
+    refreshWallet(brokerId).catch(error => {
+      console.warn('Could not refresh wallet balance.', error?.message);
+    });
+
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') {
+        refreshWallet(brokerId, { showLoading: false }).catch(error => {
+          console.warn('Could not refresh wallet after app resume.', error?.message);
+        });
+      }
+    });
+    return () => subscription.remove();
+  }, [brokerId]);
+
+  const displayedBalance = brokerId && walletBrokerId === String(brokerId)
+    ? creditsBalance
+    : null;
 
   // Dynamically pad the bottom tab bar according to device OS system buttons (e.g. Samsung 3-button navbar or gestures)
   const bottomInset = Math.max(insets.bottom, 12);
@@ -94,6 +140,9 @@ export default function BottomTabNavigator() {
       <Tab.Screen
         name="Matches"
         component={MatchesScreen}
+        listeners={({ navigation }) => ({
+          tabPress: () => navigation.setParams({ matchId: undefined, property: undefined }),
+        })}
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon iconName="handshake-outline" iconNameFocused="handshake" label="Matches" focused={focused} badge={unseenMatches} />
@@ -105,7 +154,7 @@ export default function BottomTabNavigator() {
         component={MyPropertiesScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon iconName="office-building-outline" iconNameFocused="office-building" label="My Properties" focused={focused} />
+            <TabIcon iconName="office-building-outline" iconNameFocused="office-building" label="My Listings" focused={focused} />
           ),
         }}
       />
@@ -114,7 +163,7 @@ export default function BottomTabNavigator() {
         component={CreditsScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon label="Tokens" focused={focused} balance={creditsBalance} />
+            <TabIcon label="Tokens" focused={focused} balance={displayedBalance} />
           ),
         }}
       />

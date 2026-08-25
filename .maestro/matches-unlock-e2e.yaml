@@ -1,0 +1,72 @@
+appId: com.propseekrui
+name: Two broker match confirmation and reveal
+tags:
+  - e2e
+  - matches
+---
+- launchApp:
+    clearState: true
+
+- runFlow:
+    file: subflows/login-and-create-pin.yaml
+    env:
+      E2E_EMAIL: broker1@example.test
+
+- tapOn: Matches
+- extendedWaitUntil:
+    visible: Unlock Contact
+    timeout: 20000
+- tapOn: Unlock Contact
+- tapOn: Unlock
+- tapOn: OK
+- extendedWaitUntil:
+    visible: Waiting for other broker
+    timeout: 10000
+
+- tapOn: Profile
+- scrollUntilVisible:
+    element:
+      text: Log Out
+    direction: DOWN
+- tapOn: Log Out
+
+- runFlow:
+    file: subflows/login-and-create-pin.yaml
+    env:
+      E2E_EMAIL: broker2@example.test
+
+- tapOn: Notifications
+- extendedWaitUntil:
+    visible: Match Unlock Request
+    timeout: 20000
+- tapOn: View & Accept in Matches
+- extendedWaitUntil:
+    visible: Accept & Unlock
+    timeout: 20000
+- tapOn: Accept & Unlock
+- tapOn: Accept & Unlock
+- extendedWaitUntil:
+    visible: Contact Unlocked
+    timeout: 20000
+- assertVisible: Broker One
+- assertVisible: Call
+- assertVisible: WhatsApp
+
+- tapOn: Profile
+- scrollUntilVisible:
+    element:
+      text: Log Out
+    direction: DOWN
+- tapOn: Log Out
+
+- runFlow:
+    file: subflows/login-and-create-pin.yaml
+    env:
+      E2E_EMAIL: broker1@example.test
+
+- tapOn: Matches
+- extendedWaitUntil:
+    visible: Contact Unlocked
+    timeout: 20000
+- assertVisible: Broker Two
+- assertVisible: Call

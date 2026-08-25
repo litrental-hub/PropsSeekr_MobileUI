@@ -170,6 +170,7 @@ export default function LoginScreen() {
                       style={styles.inputInner}
                     >
                       <TextInput
+                        testID="login-identifier"
                         style={[styles.phoneInput, { color: colors.textPrimary }]}
                         placeholder="Mobile Number or Email"
                         placeholderTextColor={colors.textDim}
@@ -196,6 +197,7 @@ export default function LoginScreen() {
                       style={styles.inputInner}
                     >
                       <TextInput
+                        testID="login-password"
                         ref={passwordInputRef}
                         style={[styles.phoneInput, { color: colors.textPrimary }]}
                         placeholder="Password"
@@ -226,7 +228,7 @@ export default function LoginScreen() {
                   </View>
 
                   {/* CTA */}
-                  <TouchableOpacity onPress={handleLogin} activeOpacity={0.85} disabled={isLoading}>
+                  <TouchableOpacity testID="login-submit" onPress={handleLogin} activeOpacity={0.85} disabled={isLoading}>
                     <LinearGradient
                       colors={['#2563EB', '#1A8CD8', '#10B981']}
                       start={{ x: 0, y: 0 }}

@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Platform,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { BottomSheet } from '../../../components/BottomSheet';
@@ -16,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import RazorpayCheckout from 'react-native-razorpay';
 import { createOrder, verifyPayment } from '../../../api/payment';
 import { useAuthStore } from '../../../store/authStore';
-import { useAppStore } from '../../../store/appStore';
+import { refreshWallet } from '../../../services/walletSync';
 
 interface PurchaseBottomSheetProps {
   pack: any;
@@ -31,15 +30,20 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('UPI');
 
-  const setCreditsBalance = useAppStore(s => s.setCreditsBalance);
   const user = useAuthStore(s => s.user);
 
   // Safely compute derived values when pack exists
-  const gst = pack ? Math.round(pack.rawPrice * 0.18) : 0;
-  const total = pack ? pack.rawPrice + gst : 0;
+  // The backend pack price is the exact Razorpay charge and is GST-inclusive.
+  const total = pack ? Number(pack.rawPrice) : 0;
+  const subtotal = pack ? Math.round(total / 1.18) : 0;
+  const gst = total - subtotal;
 
   const handlePay = async () => {
     if (!pack) return;
+    if (!user?.brokerId) {
+      Alert.alert('Wallet unavailable', 'Your broker wallet could not be identified. Please sign in again.');
+      return;
+    }
     try {
       setLoading(true);
 
@@ -81,10 +85,9 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
         razorpay_signature: data.razorpay_signature,
       });
 
-      const isSuccessful = verifyRes.success || verifyRes.status === 'SUCCESS' || verifyRes.status === 'success' || verifyRes.newBalance !== undefined || verifyRes.creditsBalance !== undefined;
-      if (isSuccessful) {
-        const updatedBal = verifyRes.newBalance ?? verifyRes.creditsBalance ?? (useAppStore.getState().creditsBalance + Number(pack.credits || 0));
-        useAppStore.getState().setCreditsBalance(updatedBal);
+      if (verifyRes.success === true) {
+        // Verification only confirms payment. The wallet endpoint is authoritative.
+        const updatedBal = await refreshWallet(user.brokerId, { showLoading: false });
         onSuccess(updatedBal);
       } else {
         throw new Error(verifyRes.message || 'Payment verification failed');
@@ -118,18 +121,18 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
             <View style={styles.summaryTopRow}>
               <View>
                 <Text style={[styles.summaryTitle, { color: colors.textPrimary }]}>{pack.name}</Text>
-                <Text style={styles.summarySub}>
+                <Text style={[styles.summarySub, { color: colors.textSecondary }]}>
                   {pack.credits} {t('credits.title').toLowerCase()}
                 </Text>
               </View>
-              <View style={styles.ratePillBig}>
-                <Text style={styles.ratePillBigText}>{pack.rateText}</Text>
+              <View style={[styles.ratePillBig, { backgroundColor: colors.successFaint }]}>
+                <Text style={[styles.ratePillBigText, { color: colors.successText }]}>{pack.rateText}</Text>
               </View>
             </View>
             {pack.saving && (
-              <View style={styles.savingRow}>
-                <MaterialCommunityIcons name="tag-outline" size={13} color="#065F46" />
-                <Text style={styles.savingText}>{pack.saving}</Text>
+              <View style={[styles.savingRow, { backgroundColor: colors.successFaint }]}>
+                <MaterialCommunityIcons name="tag-outline" size={13} color={colors.successText} />
+                <Text style={[styles.savingText, { color: colors.successText }]}>{pack.saving}</Text>
               </View>
             )}
           </View>
@@ -139,11 +142,11 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
             <View style={styles.row}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>Subtotal</Text>
               <Text style={[styles.value, { color: colors.textPrimary }]}>
-                ₹{pack.rawPrice.toLocaleString('en-IN')}
+                ₹{subtotal.toLocaleString('en-IN')}
               </Text>
             </View>
             <View style={styles.row}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>{t('credits.gst')} (18%)</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t('credits.gst')} (18%, included)</Text>
               <Text style={[styles.value, { color: colors.textPrimary }]}>
                 ₹{gst.toLocaleString('en-IN')}
               </Text>
@@ -151,7 +154,7 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
             <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />
             <View style={styles.row}>
               <Text style={[styles.totalLabel, { color: colors.textPrimary }]}>{t('credits.total')}</Text>
-              <Text style={[styles.totalValue, { color: '#10B981' }]}>
+              <Text style={[styles.totalValue, { color: colors.successText }]}>
                 ₹{total.toLocaleString('en-IN')}
               </Text>
             </View>
@@ -168,7 +171,7 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
                   style={[
                     styles.methodChip,
                     { borderColor: colors.borderFaint },
-                    isSelected && styles.methodChipActive,
+                    isSelected && { backgroundColor: colors.successText, borderColor: colors.successText },
                   ]}
                   onPress={() => setPaymentMethod(m)}
                   disabled={loading}
@@ -190,7 +193,7 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
 
           {/* Pay Button */}
           <TouchableOpacity
-            style={[styles.payBtn, loading && styles.payBtnDisabled]}
+            style={[styles.payBtn, { backgroundColor: colors.successText, shadowColor: colors.successText }, loading && styles.payBtnDisabled]}
             activeOpacity={0.85}
             onPress={handlePay}
             disabled={loading}
@@ -206,8 +209,8 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
 
           {/* Secure Footer */}
           <View style={styles.secureFooter}>
-            <MaterialCommunityIcons name="lock" size={12} color="#9CA3AF" />
-            <Text style={styles.secureText}>{t('credits.securedBy')}</Text>
+            <MaterialCommunityIcons name="lock" size={12} color={colors.textSecondary} />
+            <Text style={[styles.secureText, { color: colors.textSecondary }]}>{t('credits.securedBy')}</Text>
           </View>
         </>
       )}
@@ -239,17 +242,14 @@ const styles = StyleSheet.create({
   },
   summarySub: {
     fontSize: 13,
-    color: '#6B7280',
   },
   ratePillBig: {
-    backgroundColor: '#D1FAE5',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
     alignSelf: 'flex-start',
   },
   ratePillBigText: {
-    color: '#065F46',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -258,14 +258,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginTop: 10,
-    backgroundColor: '#ECFDF5',
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
     alignSelf: 'flex-start',
   },
   savingText: {
-    color: '#065F46',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -316,8 +314,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   methodChipActive: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
   },
   methodText: {
     fontSize: 13,
@@ -327,12 +323,10 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   payBtn: {
-    backgroundColor: '#10B981',
     height: 54,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
@@ -356,6 +350,5 @@ const styles = StyleSheet.create({
   },
   secureText: {
     fontSize: 12,
-    color: '#9CA3AF',
   },
 });

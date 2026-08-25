@@ -1,0 +1,44 @@
+appId: com.propseekrui
+---
+- extendedWaitUntil:
+    visible: Mobile Number or Email
+    timeout: 60000
+- tapOn: Mobile Number or Email
+- inputText: ${E2E_EMAIL}
+- pressKey: Enter
+- inputText: E2Epass123!
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: Create a 4-Digit PIN
+    timeout: 20000
+- repeat:
+    times: 4
+    commands:
+      - tapOn:
+          text: "1"
+- extendedWaitUntil:
+    visible: Confirm your PIN
+    timeout: 5000
+- repeat:
+    times: 4
+    commands:
+      - tapOn:
+          text: "1"
+- runFlow:
+    when:
+      visible: Enable Biometrics?
+    commands:
+      - tapOn: No Thanks
+- runFlow:
+    when:
+      visible: While using the app
+    commands:
+      - tapOn: While using the app
+- runFlow:
+    when:
+      visible: Allow only while using the app
+    commands:
+      - tapOn: Allow only while using the app
+- extendedWaitUntil:
+    visible: Home
+    timeout: 20000

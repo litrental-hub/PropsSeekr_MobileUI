@@ -18,7 +18,6 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { useTranslation } from 'react-i18next';
 
 import { useAppStore } from '../../store/appStore';
-import { useAuthStore } from '../../store/authStore';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
@@ -96,8 +95,7 @@ const MOCK_REQUIREMENTS = [
 // ── Main Screen ──────────────────────────────────────────────
 export default function DashboardScreen() {
   const navigation = useNavigation<Nav>();
-  const { creditsBalance, sectionType, setSectionType, location, setLocation } = useAppStore();
-  const user = useAuthStore(s => s.user);
+  const { creditsBalance, sectionType, setSectionType, location, setLocation, unreadNotifications } = useAppStore();
   const { t } = useTranslation();
   
   const theme = useAppTheme();
@@ -129,7 +127,6 @@ export default function DashboardScreen() {
   const [availableCount, setAvailableCount] = useState<number | null>(null);
   const [lookingCount, setLookingCount] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
-  const authUser = useAuthStore(s => s.user);
 
   const isRental = sectionType === 'Rentals';
   const tabCounts = {
@@ -182,8 +179,8 @@ export default function DashboardScreen() {
       } catch (err) {}
 
       try {
-        const matchRes: any = await getMatches(authUser?.id || '3030be5f-703c-448d-aebb-33960f9d8f4e', 1, 30);
-        const matchItems = matchRes.results || (Array.isArray(matchRes) ? matchRes : []);
+        const matchRes: any = await getMatches(1, 30, isRental ? 'RENTAL' : 'BUY_SELL');
+        const matchItems = matchRes.matches || matchRes.results || (Array.isArray(matchRes) ? matchRes : []);
         matchItems.forEach((it: any) => results.push(mapApiToProperty(it, isRental, MOCK_PROPERTY)));
       } catch (err) {}
 
@@ -293,11 +290,12 @@ export default function DashboardScreen() {
           <TouchableOpacity
             style={styles.notifIconWrap}
             onPress={() => navigation.navigate('Notifications')}
+            accessibilityRole="button"
+            accessibilityLabel="Notifications"
             activeOpacity={0.85}
           >
             <MaterialCommunityIcons name="bell-outline" size={26} color={colors.textPrimary} />
-            {/* Optional notification dot */}
-            <View style={styles.notifBadge} />
+            {unreadNotifications > 0 ? <View style={styles.notifBadge} /> : null}
           </TouchableOpacity>
         </View>
 
@@ -420,7 +418,7 @@ export default function DashboardScreen() {
             end={{ x: 1, y: 0 }}
             style={styles.fabGrad}
           >
-            <Text style={styles.fabIcon}>+</Text>
+            <MaterialCommunityIcons name="plus" size={32} color="#FFFFFF" />
           </LinearGradient>
         </TouchableOpacity>
 
