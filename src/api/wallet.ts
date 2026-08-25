@@ -3,12 +3,24 @@ import apiClient from './client';
 export interface WalletResponse {
   free_credits_balance: number;
   paid_credits_balance: number;
+  total_credits_balance?: number;
   free_credits_reset_at: string;
+  updated_at?: string;
 }
 
 export const getWallet = async (brokerId: string | number): Promise<WalletResponse> => {
   const response = await apiClient.get<WalletResponse>(`/brokers/${brokerId}/wallet`);
-  return response.data;
+  const freeBalance = Number(response.data.free_credits_balance);
+  const paidBalance = Number(response.data.paid_credits_balance);
+  if (!Number.isFinite(freeBalance) || !Number.isFinite(paidBalance)) {
+    throw new Error('Wallet API returned an invalid balance.');
+  }
+  return {
+    ...response.data,
+    free_credits_balance: freeBalance,
+    paid_credits_balance: paidBalance,
+    total_credits_balance: freeBalance + paidBalance,
+  };
 };
 
 export interface CreditTransaction {

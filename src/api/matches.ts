@@ -29,6 +29,11 @@ export interface MatchDTO {
   price?: any;
   createdAt?: string;
   unlockedContact?: UnlockedContact | null;
+  connectionRequestId?: number | null;
+  connectionRequestStatus?: 'pending' | 'accepted' | 'rejected' | 'expired' | 'credit_required' | string | null;
+  deliveryChannel?: 'in_app' | 'whatsapp' | string | null;
+  incomingConnectionRequest?: boolean;
+  currentBrokerRole?: 'listing' | 'requirement' | string;
   notificationId?: string;
   initiatorPropertyRequestId?: string;
   [key: string]: any;
@@ -39,6 +44,10 @@ export interface Pagination {
   pageSize: number;
   totalMatches: number;
   totalPages: number;
+  excellentMatches: number;
+  goodMatches: number;
+  fairMatches: number;
+  unlockedMatches: number;
 }
 
 export interface GetMatchesResponse {
@@ -49,14 +58,34 @@ export interface GetMatchesResponse {
 export interface BackendMatchesResponse {
   success: boolean;
   totalCount: number;
+  excellentCount?: number;
+  goodCount?: number;
+  fairCount?: number;
+  unlockedCount?: number;
   data: MatchDTO[];
 }
 
-export const getMatches = async (userId: string, page: number = 1, limit: number = 20, transactionType?: string): Promise<GetMatchesResponse> => {
+export const getMatches = async (
+  page: number = 1,
+  limit: number = 20,
+  transactionType?: string,
+  listingId?: number,
+  matchId?: number,
+  requirementId?: number,
+): Promise<GetMatchesResponse> => {
   try {
-    let url = `/user-matches?userId=${userId}&page=${page}&limit=${limit}`;
+    let url = `/user-matches?page=${page}&limit=${limit}`;
     if (transactionType) {
       url += `&type=${transactionType}&transactionType=${transactionType}`;
+    }
+    if (listingId) {
+      url += `&listingId=${encodeURIComponent(String(listingId))}`;
+    }
+    if (matchId) {
+      url += `&matchId=${encodeURIComponent(String(matchId))}`;
+    }
+    if (requirementId) {
+      url += `&requirementId=${encodeURIComponent(String(requirementId))}`;
     }
     console.log('Fetching matches from:', url);
     const response = await apiClient.get<BackendMatchesResponse>(url);
@@ -74,6 +103,10 @@ export const getMatches = async (userId: string, page: number = 1, limit: number
         pageSize: limit,
         totalMatches: responsePayload?.totalCount || responsePayload?.total || matchesList.length,
         totalPages: Math.ceil((responsePayload?.totalCount || responsePayload?.total || matchesList.length) / limit) || 1,
+        excellentMatches: responsePayload?.excellentCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) >= 90).length,
+        goodMatches: responsePayload?.goodCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) >= 75 && Number(match.matchScore ?? 0) < 90).length,
+        fairMatches: responsePayload?.fairCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) < 75).length,
+        unlockedMatches: responsePayload?.unlockedCount ?? matchesList.filter(match => match.isRevealed === true).length,
       }
     };
   } catch (error: any) {
@@ -87,7 +120,6 @@ export const getMatches = async (userId: string, page: number = 1, limit: number
 // Broker B calling this completes the handshake (state → confirmed)
 export interface ConfirmMatchPayload {
   matchId: number;
-  brokerId: number;
   availabilityConfirmed: boolean;
   priceValid: boolean;
   priceNegotiable: boolean;
@@ -95,12 +127,21 @@ export interface ConfirmMatchPayload {
 }
 
 export interface ConfirmMatchResponse {
-  success?: boolean;
+  success: boolean;
   message?: string;
   matchId?: number;
   state?: string;           // 'pending_confirmation' | 'confirmed'
   windowExpiresAt?: string; // ISO timestamp — show countdown to Broker A
   creditsRequired?: number;
+  errorCode?: string | null;
+  connectionRequestId?: number | null;
+  connectionRequestStatus?: string | null;
+  deliveryChannel?: string | null;
+  deliveryStatus?: string | null;
+  counterpartyRegistered?: boolean | null;
+  isRevealed?: boolean;
+  creditsRemaining?: number;
+  unlockedContact?: UnlockedContact | null;
 }
 
 export const confirmMatch = async (matchId: number, data: ConfirmMatchPayload): Promise<ConfirmMatchResponse> => {
@@ -111,16 +152,47 @@ export const confirmMatch = async (matchId: number, data: ConfirmMatchPayload): 
   return response.data;
 };
 
+export type RejectReasonCode =
+  | 'PROPERTY_UNAVAILABLE'
+  | 'PRICE_CHANGED'
+  | 'CLIENT_REQUIREMENT_CLOSED'
+  | 'ALREADY_CLOSED'
+  | 'INCORRECT_MATCH'
+  | 'OTHER';
+
+export interface RejectMatchPayload {
+  matchId: number;
+  connectionRequestId?: number | null;
+  reasonCode: RejectReasonCode;
+  reasonText?: string;
+}
+
+export interface RejectMatchResponse {
+  success: boolean;
+  message: string;
+  matchId: number;
+  connectionRequestId: number;
+  connectionRequestStatus: 'rejected';
+}
+
+export const rejectMatch = async (matchId: number, data: RejectMatchPayload): Promise<RejectMatchResponse> => {
+  const response = await apiClient.post<RejectMatchResponse>(
+    `/user-matches/matches/${matchId}/reject`,
+    data,
+  );
+  return response.data;
+};
+
 // ── Step 2: Reveal contacts (called after both confirmations) ─────
 // Idempotent: safe to retry; will NOT deduct credits again if already revealed
 export interface RevealMatchPayload {
   matchId: number;
-  brokerId: number;
 }
 
 export interface RevealMatchResponse {
   success: boolean;
   message?: string;
+  errorCode?: string;
   creditsRemaining?: number;
   unlockedContact: UnlockedContact | null;
 }
@@ -147,4 +219,3 @@ export const getUnlockedMatches = async (): Promise<any[]> => {
   if (Array.isArray(resData)) return resData;
   return resData?.data || resData?.matches || resData?.items || [];
 };
-

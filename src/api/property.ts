@@ -48,9 +48,18 @@ export const searchProperties = async (data: SearchPropertiesPayload): Promise<S
 // ── Property Inventory ──────────────────────────────────────────
 export interface AddListingPayload {
   broker_id: number;
+  listing_type: 'RENT' | 'SELL';
   property_type: string;
   locality: string;
   price: number;
+  price_unit?: string;
+  configuration?: string;
+  size?: number;
+  furnishing?: string;
+  facing?: string;
+  project_name?: string;
+  city?: string;
+  raw_message_text?: string;
   posted_by: string;
   requirement_ids: number[];
   sizes: Array<{ size_sqft: number; bhk: number }>;
@@ -71,31 +80,53 @@ export const addListing = async (data: AddListingPayload): Promise<AddListingRes
 };
 
 export interface PropertyListingItem {
-  listingId?: string;
-  id?: string;
-  title?: string;
-  bhk?: string;
-  buildingName?: string;
-  locality?: string;
-  location?: string;
-  price?: number | string;
-  views?: number;
-  leads?: number;
-  matches?: number;
-  status?: 'Active' | 'Under Review' | 'Rented' | 'Sold' | string;
-  type?: 'RENTAL' | 'BUY/SELL' | string;
-  [key: string]: any;
+  id: string;
+  listingId: number;
+  title: string;
+  type: 'RENTAL' | 'BUY/SELL' | string;
+  transactionType: 'RENTAL' | 'BUY_SELL' | string;
+  listingType: string;
+  propertyType: string;
+  configuration: string;
+  locality: string;
+  location: string;
+  city: string;
+  price: number | null;
+  priceUnit?: string | null;
+  builtUpSize?: number | null;
+  sizes: Array<{ label: string; sizeSqft: number }>;
+  views: number | null;
+  matchCount: number;
+  status: 'Active' | 'Under Review' | 'Rented' | 'Sold' | string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface GetMyListingsResponse {
-  status?: string;
-  totalCount?: number;
-  listings?: PropertyListingItem[];
-  data?: PropertyListingItem[];
+  success: boolean;
+  totalCount: number;
+  page: number;
+  limit: number;
+  data: PropertyListingItem[];
 }
 
-export const getMyListings = async (page = 1, limit = 20): Promise<GetMyListingsResponse | PropertyListingItem[]> => {
-  const response = await apiClient.get<GetMyListingsResponse | PropertyListingItem[]>(`/inventory/my-listings?page=${page}&limit=${limit}`);
+export interface MyListingsFilters {
+  transactionType?: 'RENTAL' | 'BUY_SELL';
+  status?: string;
+}
+
+export const getMyListings = async (
+  page = 1,
+  limit = 20,
+  filters: MyListingsFilters = {},
+): Promise<GetMyListingsResponse> => {
+  const query = [
+    `page=${page}`,
+    `limit=${limit}`,
+    filters.transactionType ? `transactionType=${encodeURIComponent(filters.transactionType)}` : '',
+    filters.status ? `status=${encodeURIComponent(filters.status)}` : '',
+  ].filter(Boolean).join('&');
+  const response = await apiClient.get<GetMyListingsResponse>(`/listings/mine?${query}`);
   return response.data;
 };
 
@@ -180,4 +211,3 @@ export const getListingMetrics = async () => {
   const response = await apiClient.get('/listings/metrics');
   return response.data;
 };
-

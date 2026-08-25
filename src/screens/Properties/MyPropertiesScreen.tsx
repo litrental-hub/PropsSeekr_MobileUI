@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   ScrollView,
   StatusBar,
   RefreshControl,
+  Image,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -14,88 +16,19 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { getMyRequirements } from '../../api/requirements';
-import { getMyListings } from '../../api/property';
+import { getMyListings, PropertyListingItem } from '../../api/property';
 
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
+import { Radius, Shadow, FontSize, FontWeight, Card, Spacing } from '../../constants/theme';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { formatPrice } from '../../utils/formatters';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/appStore';
+import { BottomSheet } from '../../components/BottomSheet';
+import { inventoryItemMatchesSearch } from '../../utils/inventorySearch';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-
-interface PropertyItem {
-  id: string;
-  title: string;
-  location: string;
-  price: string;
-  type: 'RENTAL' | 'BUY/SELL';
-  status: 'Active' | 'Under Review' | 'Rented' | 'Sold';
-  views: number;
-  matches: number;
-}
-
-interface RequirementItem {
-  id: string;
-  lookingFor: string;
-  location: string;
-  budget: string;
-  status: 'Active' | 'Paused';
-  matchesFound: number;
-}
-
-const MOCK_MY_PROPERTIES: PropertyItem[] = [
-  {
-    id: 'prop-1',
-    title: '2BHK Semi-Furnished Flat',
-    location: 'Vijay Nagar, Indore',
-    price: '₹14,000 /mo',
-    type: 'RENTAL',
-    status: 'Active',
-    views: 45,
-    matches: 12,
-  },
-  {
-    id: 'prop-2',
-    title: 'Commercial Office Space 1500 sqft',
-    location: 'AB Road, Indore',
-    price: '₹85,000 /mo',
-    type: 'RENTAL',
-    status: 'Active',
-    views: 110,
-    matches: 24,
-  },
-  {
-    id: 'prop-3',
-    title: '3BHK Luxury Penthouse',
-    location: 'New Palasia, Indore',
-    price: '₹1.25 Cr',
-    type: 'BUY/SELL',
-    status: 'Under Review',
-    views: 8,
-    matches: 2,
-  }
-];
-
-const MOCK_MY_REQUIREMENTS: RequirementItem[] = [
-  {
-    id: 'req-1',
-    lookingFor: '3BHK Flat for Family',
-    location: 'South Tukoganj · 5 km radius',
-    budget: '₹50 – 70 Lakhs',
-    status: 'Active',
-    matchesFound: 8,
-  },
-  {
-    id: 'req-2',
-    lookingFor: '1BHK or Studio Apartment',
-    location: 'Vijay Nagar · Walking distance to IT Park',
-    budget: '₹10 – 15K /month',
-    status: 'Active',
-    matchesFound: 15,
-  }
-];
 
 export default function MyPropertiesScreen() {
   const navigation = useNavigation<Nav>();
@@ -103,160 +36,285 @@ export default function MyPropertiesScreen() {
   const isDark = type === 'dark';
   const { t } = useTranslation();
   const { sectionType, setSectionType } = useAppStore();
+  const transactionType = sectionType === 'Rentals' ? 'RENTAL' : 'BUY_SELL';
   const [activeTab, setActiveTab] = useState<'Properties' | 'Requirements'>('Properties');
   const [requirements, setRequirements] = useState<any[]>([]);
-  const [properties, setProperties] = useState<any[]>(MOCK_MY_PROPERTIES);
+  const [properties, setProperties] = useState<PropertyListingItem[]>([]);
   const [loadingReq, setLoadingReq] = useState(false);
   const [loadingProp, setLoadingProp] = useState(false);
-  const [expandedListingId, setExpandedListingId] = useState<string | null>(null);
-  const [expandedRequirementId, setExpandedRequirementId] = useState<string | null>(null);
+  const [isActionsVisible, setIsActionsVisible] = useState(false);
+  const [propertyError, setPropertyError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const propertyRequestId = React.useRef(0);
+  const requirementRequestId = React.useRef(0);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      if (activeTab === 'Requirements') {
-        fetchRequirements();
-      } else {
-        fetchProperties();
-      }
-    }, [activeTab])
-  );
+  const filteredProperties = useMemo(() => properties.filter(item =>
+    inventoryItemMatchesSearch(item as unknown as Record<string, unknown>, searchQuery, [
+      'title', 'type', 'transactionType', 'listingType', 'propertyType',
+      'configuration', 'locality', 'location', 'city', 'price', 'priceUnit',
+      'builtUpSize', 'sizes', 'status',
+    ])), [properties, searchQuery]);
 
-  const fetchProperties = async () => {
+  const filteredRequirements = useMemo(() => requirements.filter(item =>
+    inventoryItemMatchesSearch(item as Record<string, unknown>, searchQuery, [
+      'description', 'lookingFor', 'title', 'transactionType', 'category',
+      'propertyType', 'configuration', 'locality', 'location', 'city',
+      'budget', 'budgetMin', 'budgetMax', 'preferredLocation', 'requiredArea',
+      'size', 'status',
+    ])), [requirements, searchQuery]);
+
+  const fetchProperties = React.useCallback(async () => {
+    const requestId = ++propertyRequestId.current;
     try {
       setLoadingProp(true);
-      const res = await getMyListings(1, 20);
-      const list = (res as any)?.listings || (res as any)?.data || (Array.isArray(res) ? res : []);
-      setProperties(list);
+      setPropertyError(null);
+      setProperties([]);
+      const res = await getMyListings(1, 20, { transactionType });
+      if (requestId === propertyRequestId.current) {
+        setProperties(res.data ?? []);
+      }
     } catch (err) {
       console.log('Error fetching properties:', err);
+      if (requestId === propertyRequestId.current) {
+        setPropertyError('Unable to load your listings. Pull down to retry.');
+      }
     } finally {
-      setLoadingProp(false);
+      if (requestId === propertyRequestId.current) {
+        setLoadingProp(false);
+      }
     }
-  };
+  }, [transactionType]);
 
-  const fetchRequirements = async () => {
+  const fetchRequirements = React.useCallback(async () => {
+    const requestId = ++requirementRequestId.current;
     try {
       setLoadingReq(true);
-      const data = await getMyRequirements(1, 20);
-      setRequirements(data?.data || data || []);
+      setRequirements([]);
+      const data = await getMyRequirements(1, 20, transactionType);
+      if (requestId === requirementRequestId.current) {
+        setRequirements(data?.data || data || []);
+      }
     } catch (err) {
       console.log('Error fetching requirements:', err);
     } finally {
-      setLoadingReq(false);
+      if (requestId === requirementRequestId.current) {
+        setLoadingReq(false);
+      }
     }
-  };
+  }, [transactionType]);
 
-  const handleAddProperty = () => {
-    navigation.navigate('AddProperty', {});
-  };
-
-  const handleAddRequirement = () => {
-    navigation.navigate('AddRequirement', {});
-  };
-
-  const renderPropertyCard = (item: any) => (
-    <View key={item.id || item.listingId || Math.random().toString()} style={[styles.card, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
-      <View style={styles.cardHeader}>
-        <View style={styles.tagWrap}>
-          <Text style={styles.tagText}>{item.type || item.propertyType || 'RENTAL'}</Text>
-        </View>
-        <View style={[
-          styles.statusWrap, 
-          { backgroundColor: item.status === 'Active' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)' }
-        ]}>
-          <Text style={[
-            styles.statusText, 
-            { color: item.status === 'Active' ? '#10B981' : '#F59E0B' }
-          ]}>
-            ● {item.status || 'Active'}
-          </Text>
-        </View>
-      </View>
-
-      <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.title || item.buildingName || item.bhk || 'Property Listing'}</Text>
-      <Text style={[styles.cardLocation, { color: colors.textSecondary }]}>📍 {item.location || item.locality || 'Unknown Location'}</Text>
-      
-      <Text style={styles.cardPrice}>{formatPrice(item.price || '₹0')}</Text>
-
-      <View style={[styles.cardFooter, { borderTopColor: Brand.blueBorder }]}>
-        <View style={styles.statsRow}>
-          <Text style={[styles.statText, { color: colors.textDim }]}>👁️ {item.views || 0} {t('myProperties.views')}</Text>
-          <TouchableOpacity
-            onPress={() => setExpandedListingId(expandedListingId === (item.id || item.listingId) ? null : (item.id || item.listingId))}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.statText, { color: colors.textDim }]}>🤝 {item.matchesFound ?? item.matches ?? item.leads ?? 0} {t('myProperties.matches')}</Text>
-          </TouchableOpacity>
-        </View>
-        
-        <TouchableOpacity style={styles.editBtn} activeOpacity={0.7} onPress={() => navigation.navigate('AddProperty', { editId: item.id || item.listingId, initialData: item })}>
-          <MaterialCommunityIcons name="pencil-outline" size={18} color={Brand.teal} />
-          <Text style={[styles.editBtnText, { color: Brand.teal }]}>{t('myProperties.edit')}</Text>
-        </TouchableOpacity>
-      </View>
-      {expandedListingId === (item.id || item.listingId) && renderMatchedChildren(item.matches, 'listing')}
-    </View>
+  useFocusEffect(
+    React.useCallback(() => {
+      // Load both collections so both tab counts always reflect the selected mode.
+      fetchProperties();
+      fetchRequirements();
+    }, [fetchProperties, fetchRequirements])
   );
 
-  const renderRequirementCard = (item: any) => (
-    <View key={item.id || Math.random().toString()} style={[styles.card, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.reqBadge}>{t('myProperties.clientReq')}</Text>
-        <View style={[
-          styles.statusWrap, 
-          { backgroundColor: 'rgba(16,185,129,0.15)' }
-        ]}>
-          <Text style={[styles.statusText, { color: '#10B981' }]}>● {item.status || 'Active'}</Text>
-        </View>
-      </View>
+  const handleMatchesPress = (item: any) => {
+    // Matches is a sibling route in the bottom-tab navigator.
+    (navigation as any).navigate('Matches', { property: item });
+  };
 
-      <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.description || item.lookingFor || 'Requirement'}</Text>
-      <Text style={[styles.cardLocation, { color: colors.textSecondary }]}>📍 {item.locality || item.location || 'Unknown Location'}</Text>
+  const renderPropertyCard = (item: PropertyListingItem) => {
+    const matchCount = item.matchCount ?? 0;
+    const status = item.status || 'Active';
+    const isActive = String(status).toLowerCase() === 'active';
+
+    const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    // Use local fallback if needed, but keeping the current implementation
+    const propertyImageSource = (item as any).imageUrl
+      ? { uri: (item as any).imageUrl }
+      : { uri: DEFAULT_PROPERTY_IMAGE };
       
-      <Text style={[styles.cardPrice, { color: Brand.teal }]}>{t('myProperties.budget')} {formatPrice(item.budget || item.budgetMax || 'N/A')}</Text>
-
-      <View style={[styles.cardFooter, { borderTopColor: Brand.blueBorder }]}>
-        <TouchableOpacity
-          onPress={() => setExpandedRequirementId(expandedRequirementId === item.id ? null : item.id)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.statText, { color: Brand.blue }]}>🤝 {item.matchesFound || 0} {t('myProperties.matches')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.editBtn} activeOpacity={0.7} onPress={() => navigation.navigate('AddRequirement', { editId: item.id, initialData: item })}>
-          <MaterialCommunityIcons name="pencil-outline" size={18} color={Brand.teal} />
-          <Text style={[styles.editBtnText, { color: Brand.teal }]}>{t('myProperties.edit')}</Text>
-        </TouchableOpacity>
-      </View>
-      {expandedRequirementId === item.id && renderMatchedChildren(item.matches, 'requirement')}
-    </View>
-  );
-
-  const renderMatchedChildren = (matches: any[] | undefined, parentType: 'listing' | 'requirement') => {
-    if (!matches?.length) {
-      return <Text style={[styles.noMatchesText, { color: colors.textDim }]}>No matches yet</Text>;
-    }
+    // Try to get area/size if available in the model
+    const sizeStr = (item as any).size ? `${(item as any).size} sq ft` : null;
+    const locationStr = item.locality || item.location || 'Location not specified';
 
     return (
-      <View style={[styles.matchesContainer, { borderLeftColor: Brand.teal }]}>
-        {matches.map(match => (
-          <TouchableOpacity
-            key={match.matchId}
-            style={[styles.matchChild, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
-            activeOpacity={0.75}
-            onPress={() => navigation.navigate('MatchDetail', { matchId: String(match.matchId) })}
-          >
-            <View style={styles.matchChildHeader}>
-              <Text style={[styles.matchChildType, { color: Brand.teal }]}>
-                {parentType === 'listing' ? 'Matching requirement' : 'Matching listing'}
-              </Text>
-              <Text style={[styles.matchScore, { color: Brand.blue }]}>{Math.round(match.matchScore || 0)}%</Text>
+      <View
+        key={item.id}
+        style={[styles.propertyCard, { backgroundColor: colors.cardBg }]}
+      >
+        <View style={styles.cardInnerLayout}>
+          {/* Left Side: Property Image */}
+          <View style={styles.cardImageContainer}>
+            <Image
+              source={propertyImageSource}
+              style={styles.cardImage}
+              resizeMode="cover"
+            />
+          </View>
+
+          {/* Right Side: Property Details */}
+          <View style={styles.cardDetailsContainer}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.propertyTypeLabel}>{item.type || item.propertyType || 'PROPERTY'}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: isActive ? colors.successFaint : colors.warningFaint }]}>
+                <Text style={[styles.statusBadgeText, { color: isActive ? colors.successText : colors.warningText }]}>
+                  {status}
+                </Text>
+              </View>
             </View>
-            <Text style={[styles.matchChildTitle, { color: colors.textPrimary }]}>{match.title || 'Matched property'}</Text>
-            <Text style={[styles.matchChildMeta, { color: colors.textSecondary }]}>
-              {match.locality || match.city || 'Location not specified'} · {formatPrice(match.priceOrBudget || 0)}
+
+            <Text style={[styles.propertyTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+              {item.title || 'Property Listing'}
             </Text>
+
+            <View style={styles.priceAreaRow}>
+              <Text style={[styles.propertyPrice, { color: colors.textPrimary }]}>{formatPrice(item.price)}</Text>
+              {sizeStr && (
+                <>
+                  <Text style={styles.separatorText}>|</Text>
+                  <Text style={styles.areaText}>{sizeStr}</Text>
+                </>
+              )}
+            </View>
+
+            <View style={styles.locationRow}>
+              <MaterialCommunityIcons name="map-marker-outline" size={14} color={colors.textDim} />
+              <Text style={[styles.cardLocation, { color: colors.textSecondary }]} numberOfLines={1}>
+                {locationStr}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Action Buttons Row */}
+        <View style={styles.cardFooter}>
+          <TouchableOpacity
+            testID={`property-${item.id}-matches`}
+            accessibilityRole="button"
+            accessibilityLabel={`${matchCount} Matching Requirements`}
+            activeOpacity={0.72}
+            onPress={() => handleMatchesPress(item)}
+            style={[styles.matchesCta, { backgroundColor: colors.brandFaint }]}
+          >
+            <Text style={styles.matchesCtaEmoji}>🤝</Text>
+            <Text 
+              style={styles.matchesCtaText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {matchCount} {matchCount === 1 ? 'Matching Requirement' : 'Matching Requirements'}
+            </Text>
+            <MaterialCommunityIcons name="arrow-right" size={16} color={Brand.teal} style={{ marginLeft: 4, flexShrink: 0 }} />
           </TouchableOpacity>
-        ))}
+
+          <TouchableOpacity 
+            style={[styles.editBtnOutline, { backgroundColor: colors.cardBg }]} 
+            activeOpacity={0.7} 
+            onPress={() => navigation.navigate('AddProperty', { editId: item.id, initialData: item })}
+          >
+            <MaterialCommunityIcons name="pencil-outline" size={14} color={Brand.teal} />
+            <Text style={styles.editBtnOutlineText}>{t('myProperties.edit', 'Edit')}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const renderRequirementCard = (item: any) => {
+    const matchCount = item.matchesFound ?? item.matchCount ?? 0;
+    const status = item.status || 'Active';
+    const isActive = String(status).toLowerCase() === 'active';
+
+    // Use an office/building image for client requirements
+    const DEFAULT_REQ_IMAGE = 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    const propertyImageSource = item.imageUrl
+      ? { uri: item.imageUrl }
+      : { uri: DEFAULT_REQ_IMAGE };
+      
+    const sizeStr = item.size ? `${item.size} sq ft` : null;
+    const locationStr = item.locality || item.location || 'Location not specified';
+
+    return (
+      <View
+        key={item.id || Math.random().toString()}
+        style={[styles.propertyCard, { backgroundColor: colors.cardBg }]}
+      >
+        <View style={styles.cardInnerLayout}>
+          {/* Left Side: Property Image */}
+          <View style={styles.cardImageContainer}>
+            <Image
+              source={propertyImageSource}
+              style={styles.cardImage}
+              resizeMode="cover"
+            />
+          </View>
+
+          {/* Right Side: Property Details */}
+          <View style={styles.cardDetailsContainer}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.propertyTypeLabel}>{t('myProperties.clientReq', 'CLIENT REQ')}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: isActive ? colors.successFaint : colors.warningFaint }]}>
+                <Text style={[styles.statusBadgeText, { color: isActive ? colors.successText : colors.warningText }]}>
+                  {status}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.propertyTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+              {item.description || item.lookingFor || item.title || 'Client Requirement'}
+            </Text>
+
+            <View style={styles.priceAreaRow}>
+              <Text style={[styles.propertyPrice, { color: colors.textPrimary }]}>{formatPrice(item.budget || item.budgetMax || 0)}</Text>
+              {sizeStr && (
+                <>
+                  <Text style={styles.separatorText}>|</Text>
+                  <Text style={styles.areaText}>{sizeStr}</Text>
+                </>
+              )}
+            </View>
+
+            <View style={styles.locationRow}>
+              <MaterialCommunityIcons name="map-marker-outline" size={14} color={colors.textDim} />
+              <Text style={[styles.cardLocation, { color: colors.textSecondary }]} numberOfLines={1}>
+                {locationStr}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <TouchableOpacity
+            testID={`req-${item.id}-matches`}
+            accessibilityRole="button"
+            accessibilityLabel={`${matchCount} Matching Listings`}
+            activeOpacity={0.72}
+            onPress={() => {
+              handleMatchesPress({
+                ...item,
+                type: 'Requirement',
+                requirementId: item.requirementId ?? item.id,
+                title: item.description || item.lookingFor || item.title || 'Client Requirement',
+                location: item.locality || item.location,
+                price: item.budget?.max ?? item.budgetMax ?? item.budget,
+              });
+            }}
+            style={styles.matchesCta}
+          >
+            <Text style={styles.matchesCtaEmoji}>🤝</Text>
+            <Text 
+              style={styles.matchesCtaText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {matchCount} {matchCount === 1 ? 'Matching Listing' : 'Matching Listings'}
+            </Text>
+            <MaterialCommunityIcons name="arrow-right" size={16} color={Brand.teal} style={{ marginLeft: 4, flexShrink: 0 }} />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.editBtnOutline, { backgroundColor: colors.cardBg }]} 
+            activeOpacity={0.7} 
+            onPress={() => navigation.navigate('AddRequirement', { editId: item.id, initialData: item })}
+          >
+            <MaterialCommunityIcons name="pencil-outline" size={14} color={Brand.teal} />
+            <Text style={styles.editBtnOutlineText}>{t('myProperties.edit', 'Edit')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -282,36 +340,18 @@ export default function MyPropertiesScreen() {
 
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         
-        {/* ── Header with Add Buttons in Top Right Corner ── */}
-        <View style={[styles.header, { borderBottomColor: Brand.blueBorder }]}>
-          <PropSeekrLogo size={28} theme={type} layout="horizontal" />
-          
-          <View style={styles.headerRightButtons}>
-            <TouchableOpacity onPress={handleAddProperty} activeOpacity={0.8}>
-              <LinearGradient
-                colors={[Brand.blue, Brand.teal]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.actionBtnGrad}
-              >
-                <Text style={styles.actionBtnText}>{t('myProperties.addPropertyBtn')}</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={handleAddRequirement} activeOpacity={0.8} style={[styles.actionBtnOutline, { borderColor: Brand.teal }]}>
-              <Text style={[styles.actionBtnOutlineText, { color: Brand.teal }]}>{t('myProperties.addRequirementBtn')}</Text>
-            </TouchableOpacity>
+        {/* ── Header with Centered Toggle ── */}
+        <View style={[styles.header, { borderBottomColor: Brand.blueBorder, position: 'relative' }]}>
+          <View style={{ position: 'absolute', left: 16 }}>
+            <PropSeekrLogo size={28} theme={type} layout="horizontal" />
           </View>
-        </View>
-
-        {/* ── Rental / Buy-Sell Toggle Row ── */}
-        <View style={[styles.toggleRow, { backgroundColor: colors.navy }]}>
+          
           <View style={[styles.modeToggle, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
             {[
               { key: 'Rentals', label: t('dashboard.rental'), emoji: '🔑' },
               { key: 'Buying', label: t('dashboard.buySell'), emoji: '🏠' },
             ].map(({ key, label, emoji }) => {
-              const active = sectionType === key;
+              const active = (sectionType === 'Rentals' ? 'Rentals' : 'Buying') === key;
               return (
                 <TouchableOpacity
                   key={key}
@@ -342,7 +382,7 @@ export default function MyPropertiesScreen() {
         </View>
 
         {/* ── Tab Bar (Properties / Requirements) ── */}
-        <View style={[styles.tabsRow, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}>
+        <View style={[styles.tabsRow, { backgroundColor: colors.cardBg }]}>
           {(['Properties', 'Requirements'] as const).map(tab => {
             const active = activeTab === tab;
             const count = tab === 'Properties' ? properties.length : requirements.length;
@@ -358,7 +398,7 @@ export default function MyPropertiesScreen() {
                   { color: active ? colors.textPrimary : colors.textDim }, 
                   active && { fontWeight: '700' }
                 ]}>
-                  {tab === 'Properties' ? t('myProperties.title') : (t('myProperties.clientReq'))}{' '}
+                  {tab === 'Properties' ? t('myProperties.title', 'My Listings') : t('myProperties.clientReq', 'My Requirement')}{' '}
                   <Text style={[styles.tabCount, active && { color: Brand.teal }]}>
                     ({count})
                   </Text>
@@ -376,6 +416,39 @@ export default function MyPropertiesScreen() {
           })}
         </View>
 
+        {/* ── Search Bar ── */}
+        <View style={[styles.searchContainerWrap, { backgroundColor: colors.navy }]}> 
+          <View style={[styles.searchContainer, { backgroundColor: colors.cardBg }]}> 
+            <MaterialCommunityIcons name="magnify" size={20} color={colors.textSecondary} style={styles.searchIcon} />
+            <TextInput
+              testID="inventory-search-input"
+              accessibilityLabel={activeTab === 'Properties' ? 'Search my listings' : 'Search my requirements'}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={activeTab === 'Properties'
+                ? 'Search listings by location, title...'
+                : 'Search requirements by location, details...'}
+              placeholderTextColor={colors.textDim}
+              style={[styles.searchInputText, { color: colors.textPrimary }]}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                testID="inventory-search-clear"
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+                style={styles.filterBtn}
+                onPress={() => setSearchQuery('')}
+              >
+                <MaterialCommunityIcons name="close-circle" size={20} color={colors.textDim} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
         {/* ── Lists ── */}
         <ScrollView 
           contentContainerStyle={styles.listContainer} 
@@ -389,21 +462,87 @@ export default function MyPropertiesScreen() {
             />
           }
         >
+          {activeTab === 'Properties' && propertyError ? (
+            <Text style={[styles.errorText, { color: colors.errorText }]}>{propertyError}</Text>
+          ) : null}
           {activeTab === 'Properties' ? (
-            properties.length > 0 ? properties.map(renderPropertyCard) : (
+            filteredProperties.length > 0 ? filteredProperties.map(renderPropertyCard) : (
               <Text style={{ textAlign: 'center', marginTop: 20, color: colors.textSecondary }}>
-                {loadingProp ? 'Loading listings...' : t('myProperties.noProperties')}
+                {loadingProp
+                  ? 'Loading listings...'
+                  : searchQuery.trim()
+                    ? 'No listings match your search.'
+                    : t('myProperties.noProperties')}
               </Text>
             )
           ) : (
-            requirements.length > 0 ? requirements.map(renderRequirementCard) : (
+            filteredRequirements.length > 0 ? filteredRequirements.map(renderRequirementCard) : (
               <Text style={{ textAlign: 'center', marginTop: 20, color: colors.textSecondary }}>
-                {loadingReq ? 'Loading...' : t('myProperties.noRequirements')}
+                {loadingReq
+                  ? 'Loading...'
+                  : searchQuery.trim()
+                    ? 'No requirements match your search.'
+                    : t('myProperties.noRequirements')}
               </Text>
             )
           )}
           <View style={styles.footerSpacer} />
         </ScrollView>
+
+        {/* ── FAB (+ button) ── */}
+        <TouchableOpacity style={styles.fab} activeOpacity={0.85} onPress={() => setIsActionsVisible(true)}>
+          <LinearGradient
+            colors={[Brand.blue, Brand.teal]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.fabGrad}
+          >
+            <MaterialCommunityIcons name="plus" size={32} color="#FFFFFF" />
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <BottomSheet visible={isActionsVisible} onClose={() => setIsActionsVisible(false)}>
+          <View style={styles.filterSheetContent}>
+            <Text style={[styles.filterSheetTitle, { color: colors.textPrimary }]}>{t('dashboard.quickActions', 'Quick Actions')}</Text>
+            <View style={{ gap: 12 }}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.actionCardRow, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
+                onPress={() => {
+                  setIsActionsVisible(false);
+                  navigation.navigate('AddProperty', {});
+                }}
+              >
+                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(16,185,129,0.15)' }]}>
+                  <MaterialCommunityIcons name="home-plus" size={26} color={Brand.teal} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionCardTitle, { color: colors.textPrimary }]}>{t('dashboard.addProperty', 'Add Property')}</Text>
+                  <Text style={[styles.actionCardSub, { color: colors.textDim }]}>{t('dashboard.addPropertySub', 'List a new property for sale or rent')}</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color={colors.textDim} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.actionCardRow, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}
+                onPress={() => {
+                  setIsActionsVisible(false);
+                  navigation.navigate('AddRequirement', {});
+                }}
+              >
+                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(37,99,235,0.15)' }]}>
+                  <MaterialCommunityIcons name="clipboard-text-outline" size={26} color={Brand.blue} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.actionCardTitle, { color: colors.textPrimary }]}>{t('dashboard.addRequirement', 'Add Requirement')}</Text>
+                  <Text style={[styles.actionCardSub, { color: colors.textDim }]}>{t('dashboard.addRequirementSub', 'Post a client requirement')}</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={24} color={colors.textDim} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </BottomSheet>
       </SafeAreaView>
     </View>
   );
@@ -424,7 +563,7 @@ const styles = StyleSheet.create({
     height: 60,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: 16,
     borderBottomWidth: 1,
   },
@@ -478,131 +617,181 @@ const styles = StyleSheet.create({
     height: 3,
     borderRadius: 2,
   },
+  // --- Search Bar Styles ---
+  searchContainerWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInputText: {
+    flex: 1,
+    fontSize: 14,
+  },
+  filterBtn: {
+    padding: 8,
+    marginLeft: 4,
+  },
+
+  // --- List & Card Styles ---
   listContainer: {
     padding: 16,
   },
-  card: {
-    borderRadius: 12,
+  propertyCard: {
+    borderRadius: Card.radius,   // 16dp — standardised token
     borderWidth: 1,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    borderColor: '#E2E8F0',
+    padding: Card.padding,
+    marginBottom: Spacing.lg + 2,
+    ...Shadow.sm,
   },
-  cardHeader: {
+  cardInnerLayout: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  cardImageContainer: {
+    width: 115,
+    height: 115,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F3F4F6',
+  },
+  cardDetailsContainer: {
+    flex: 1,
+    justifyContent: 'flex-start',
+  },
+  cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    alignItems: 'flex-start',
+    marginBottom: 4,
   },
-  tagWrap: {
-    backgroundColor: 'rgba(37,99,235,0.12)',
+  propertyTypeLabel: {
+    color: Brand.teal,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    flex: 1,
+    marginRight: 8,
+    marginTop: 2,
+  },
+  statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 10,
   },
-  tagText: {
-    color: '#2563EB',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  reqBadge: {
-    color: '#0D9488',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  statusWrap: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
+  statusBadgeText: {
+    fontSize: 10,
     fontWeight: '700',
   },
-  cardTitle: {
-    fontSize: 17,
+  propertyTitle: {
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: '700',
     marginBottom: 6,
   },
-  cardLocation: {
-    fontSize: 13,
-    marginBottom: 10,
-  },
-  cardPrice: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#2563EB',
-    marginBottom: 12,
-  },
-  cardFooter: {
-    borderTopWidth: 1,
-    paddingTop: 12,
+  priceAreaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 6,
+    flexWrap: 'wrap',
   },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
+  propertyPrice: {
+    fontSize: 16,
+    fontWeight: '800',
   },
-  statText: {
+  separatorText: {
+    marginHorizontal: 6,
+    color: '#9CA3AF',
+    fontSize: 14,
+  },
+  areaText: {
     fontSize: 13,
+    color: '#6B7280',
     fontWeight: '500',
   },
-  editBtn: {
+  locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  editBtnText: {
+  cardLocation: {
+    flex: 1,
     fontSize: 13,
-    fontWeight: '700',
+    lineHeight: 18,
   },
-  footerSpacer: {
-    height: 40,
-  },
-  matchesContainer: {
-    marginTop: 14,
-    marginLeft: 8,
-    paddingLeft: 12,
-    borderLeftWidth: 2,
-    gap: 8,
-  },
-  noMatchesText: {
-    marginTop: 12,
-    fontSize: 12,
-  },
-  matchChild: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
-  },
-  matchChildHeader: {
+
+  // --- Card Footer (Actions) ---
+  cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    alignItems: 'center',
+    marginTop: 16,
+    gap: 12,
   },
-  matchChildType: {
-    fontSize: 11,
-    fontWeight: '700',
+  matchesCta: {
+    flex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1.2,
+    borderColor: 'rgba(13, 148, 136, 0.4)',
+    paddingHorizontal: 8,
+    flexShrink: 1,
   },
-  matchScore: {
+  matchesCtaEmoji: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  matchesCtaText: {
+    color: Brand.teal,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '600',
+    flexShrink: 1,
   },
-  matchChildTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+  editBtnOutline: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(13,148,136,0.2)',
+    borderRadius: 14,
   },
-  matchChildMeta: {
-    marginTop: 3,
-    fontSize: 12,
+  editBtnOutlineText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Brand.teal,
+  },
+  
+  footerSpacer: {
+    height: 100,
+  },
+  errorText: {
+    marginBottom: 12,
+    textAlign: 'center' as const,
+    fontSize: FontSize.body,
+    // color is applied inline via colors.errorText
   },
   toggleRow: {
     paddingHorizontal: 16,
@@ -620,4 +809,59 @@ const styles = StyleSheet.create({
   modeBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 6 },
   modeBtnEmoji: { fontSize: 12 },
   modeBtnText: { fontSize: 12, fontWeight: '600' },
+  
+  // --- FAB & BottomSheet Styles ---
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    ...Shadow.teal,
+  },
+  fabGrad: {
+    flex: 1,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabIcon: {
+    color: '#FFF',
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '300',
+  },
+  filterSheetContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  filterSheetTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 20,
+  },
+  actionCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  actionIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  actionCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  actionCardSub: {
+    fontSize: 13,
+  },
 });

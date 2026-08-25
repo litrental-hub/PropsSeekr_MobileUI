@@ -13,7 +13,7 @@ export const Spacing = {
 export const Radius = {
   sm:   6,
   md:   12,
-  lg:   18,
+  lg:   16,   // standard card radius — used by all cards app-wide
   xl:   24,
   full: 9999,
 };
@@ -26,14 +26,20 @@ export const FontFamily = {
 };
 
 export const FontSize = {
-  xs:   10,
-  sm:   12,
-  base: 14,
-  md:   15,
-  lg:   17,
-  xl:   20,
-  xxl:  24,
-  xxxl: 32,
+  xs:        10,
+  sm:        12,
+  base:      14,
+  md:        15,
+  lg:        17,
+  xl:        20,
+  xxl:       24,
+  xxxl:      32,
+  // Named scale aligned to design spec
+  caption:   12,   // timestamps, labels
+  body:      14,   // secondary / card subtext
+  cardTitle: 16,   // card titles, primary body
+  h2:        13,   // section headers (uppercase + letter-spacing)
+  h1:        28,   // page titles
 };
 
 export const FontWeight = {
@@ -74,3 +80,11 @@ export const Shadow = {
     elevation: 6,
   },
 };
+
+/** Shared card layout tokens — apply to ALL cards across the app */
+export const Card = {
+  radius:  Radius.lg,   // 16dp
+  padding: Spacing.lg,  // 16dp
+  gap:     Spacing.md,  // 12dp vertical gap between stacked cards
+};
+

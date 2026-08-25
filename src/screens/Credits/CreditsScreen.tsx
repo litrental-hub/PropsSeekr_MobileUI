@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StatusBar,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -19,56 +20,86 @@ import { BottomSheet } from '../../components/BottomSheet';
 import { PurchaseBottomSheet } from './components/PurchaseBottomSheet';
 import { UnlockBottomSheet } from './components/UnlockBottomSheet';
 import { ContactRevealedModal } from './components/ContactRevealedModal';
-import { getUnlockedMatches } from '../../api/matches';
-import { getWallet } from '../../api/wallet';
+import { CreditTransaction, getCreditTransactions } from '../../api/wallet';
 import { getCreditPacks } from '../../api/payment';
 import { useAuthStore } from '../../store/authStore';
 import { useFocusEffect } from '@react-navigation/native';
+import { refreshWallet } from '../../services/walletSync';
+
+interface TransactionRow {
+  id: string;
+  emoji: string;
+  iconBg: string;
+  title: string;
+  sub: string;
+  amount: string;
+  amountColor: string;
+  date: string;
+}
+
+const mapTransaction = (transaction: CreditTransaction, colors: any): TransactionRow => {
+  const type = transaction.type.trim().toLowerCase();
+  const isDebit = ['deduct', 'debit', 'reveal', 'expiry'].includes(type);
+  const titleByType: Record<string, string> = {
+    purchase: 'Tokens Purchased',
+    grant: 'Tokens Granted',
+    refund: 'Token Refund',
+    deduct: 'Contact Unlocked',
+    debit: 'Contact Unlocked',
+    reveal: 'Contact Unlocked',
+    expiry: 'Tokens Expired',
+  };
+  return {
+    id: String(transaction.id),
+    emoji: isDebit ? '🔓' : type === 'refund' ? '↩️' : '✦',
+    iconBg: isDebit ? colors.errorFaint : colors.successFaint,
+    title: titleByType[type] || 'Wallet adjustment',
+    sub: transaction.notes || transaction.reference_type || 'Wallet transaction',
+    amount: `${isDebit ? '−' : '+'}${Math.abs(transaction.amount)} token${Math.abs(transaction.amount) === 1 ? '' : 's'}`,
+    amountColor: isDebit ? colors.errorText : colors.successText,
+    date: new Date(transaction.created_at).toLocaleString(),
+  };
+};
 
 export default function CreditsScreen() {
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
   const { t } = useTranslation();
   const creditsBalance = useAppStore(s => s.creditsBalance);
-  const setCreditsBalance = useAppStore(s => s.setCreditsBalance);
+  const freeCreditsBalance = useAppStore(s => s.freeCreditsBalance);
+  const paidCreditsBalance = useAppStore(s => s.paidCreditsBalance);
+  const walletStatus = useAppStore(s => s.walletStatus);
+  const walletError = useAppStore(s => s.walletError);
+  const walletBrokerId = useAppStore(s => s.walletBrokerId);
   const user = useAuthStore(s => s.user);
 
   const [purchasePack, setPurchasePack] = useState<any>(null);
   const [unlockVisible, setUnlockVisible] = useState(false);
   const [revealedVisible, setRevealedVisible] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
-  const [unlockedItems, setUnlockedItems] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [packs, setPacks] = useState<any[]>([]);
-
-  useEffect(() => {
-    getUnlockedMatches()
-      .then(items => {
-        if (items && items.length > 0) {
-          setUnlockedItems(items);
-        }
-      })
-      .catch(err => console.log('Failed to fetch unlocked matches history:', err?.message));
-  }, []);
+  const [packsError, setPacksError] = useState<string | null>(null);
 
   useFocusEffect(
     React.useCallback(() => {
-      // Fetch wallet balance
-      if (user?.id) {
-        const targetId = user?.brokerId || user?.id || '';
-        getWallet(targetId)
-          .then(res => {
-            if (res && res.free_credits_balance !== undefined) {
-              const total = res.free_credits_balance + (res.paid_credits_balance || 0);
-              setCreditsBalance(total);
-            }
-          })
-          .catch(err => console.log('Failed to fetch wallet:', err?.message));
+      if (user?.brokerId) {
+        refreshWallet(user.brokerId).catch(error => {
+          console.warn('Failed to fetch wallet:', error?.message);
+        });
+        setHistoryLoading(true);
+        setHistoryError(null);
+        getCreditTransactions(user.brokerId)
+          .then(result => setTransactions(result.transactions.map(txn => mapTransaction(txn, colors))))
+          .catch(error => setHistoryError(error?.response?.data?.message || error?.message || 'Could not load token history.'))
+          .finally(() => setHistoryLoading(false));
       }
 
       // Fetch credit packs
       getCreditPacks()
         .then(res => {
-          console.log('CREDIT PACKS RESPONSE:', res);
-          
+          setPacksError(null);
           // Handle both { success: true, packs: [] } AND direct array cases
           const packsArray = res?.packs || (Array.isArray(res) ? res : []);
           
@@ -86,19 +117,15 @@ export default function CreditsScreen() {
             }));
             setPacks(mappedPacks);
           } else {
-            console.log('Credit packs array is empty or undefined!');
-            // Fallback mock data if API is returning empty during testing
-            setPacks([
-              { id: '1', tierId: 'CREDITS_10', name: 'Lite Pack', credits: 10, rateText: '₹300 per token', price: '₹3,000', saving: null, isPopular: false, rawPrice: 3000 },
-              { id: '2', tierId: 'CREDITS_20', name: 'Growth Pack', credits: 20, rateText: '₹280 per token', price: '₹5,600', saving: 'Popular', isPopular: true, rawPrice: 5600 },
-              { id: '3', tierId: 'CREDITS_50', name: 'Enterprise Pack', credits: 50, rateText: '₹250 per token', price: '₹12,500', saving: null, isPopular: false, rawPrice: 12500 }
-            ]);
+            setPacks([]);
+            setPacksError('No token packs are currently available.');
           }
         })
         .catch(err => {
-          console.log('Failed to fetch credit packs:', err?.message);
+          setPacks([]);
+          setPacksError(err?.response?.data?.message || err?.message || 'Could not load token packs.');
         });
-    }, [user?.id, user?.brokerId, setCreditsBalance])
+    }, [user?.brokerId])
   );
 
   const handleBuy = (pack: any) => {
@@ -106,9 +133,14 @@ export default function CreditsScreen() {
   };
 
   const handlePaymentSuccess = (newBalance: number) => {
-    setCreditsBalance(newBalance);
     setPurchasePack(null);
-    Alert.alert('Payment Successful', 'Your tokens have been successfully added to your wallet!');
+    Alert.alert('Payment Successful', `Your wallet now has ${newBalance} tokens.`);
+  };
+
+  const walletBelongsToUser = !!user?.brokerId && walletBrokerId === String(user.brokerId);
+  const displayedBalance = walletBelongsToUser ? creditsBalance : null;
+  const retryWallet = () => {
+    if (user?.brokerId) refreshWallet(user.brokerId).catch(() => undefined);
   };
 
   const handleUnlockMock = () => {
@@ -138,27 +170,37 @@ export default function CreditsScreen() {
       
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+      <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1 }}>
         {/* HEADER */}
         <View style={styles.header}>
           <View style={styles.headerLeft} />
           <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{t('credits.title')}</Text>
           <TouchableOpacity style={styles.headerRight} activeOpacity={0.7} onPress={() => setHistoryVisible(true)}>
-            <Text style={styles.historyText}>{t('credits.history')}</Text>
+            <Text style={styles.historyText} numberOfLines={1}>{t('credits.history')}</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
           
           {/* LOW BALANCE BANNER */}
-          {creditsBalance <= 2 && (
-            <View style={styles.lowBalanceBanner}>
-              <MaterialCommunityIcons name="alert" size={20} color="#F59E0B" />
+          {walletStatus === 'error' && walletError && (
+            <View style={[styles.errorBanner, { backgroundColor: colors.errorFaint, borderColor: colors.errorText }]}>
+              <MaterialCommunityIcons name="cloud-alert-outline" size={20} color={colors.errorText} />
+              <Text style={[styles.errorText, { color: colors.errorText }]}>{walletError}</Text>
+              <TouchableOpacity onPress={retryWallet} style={styles.retryButton}>
+                <Text style={[styles.retryText, { color: colors.errorText }]}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {displayedBalance !== null && displayedBalance <= 2 && (
+            <View style={[styles.lowBalanceBanner, { backgroundColor: colors.warningFaint, borderColor: colors.warningText }]}>
+              <MaterialCommunityIcons name="alert" size={20} color={colors.warningText} />
               <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={styles.lowBalanceTitle}>{t('credits.lowBalanceTitle')}</Text>
-                <Text style={styles.lowBalanceSub}>{t('credits.lowBalanceSub', { balance: creditsBalance })}</Text>
+                <Text style={[styles.lowBalanceTitle, { color: colors.warningText }]}>{t('credits.lowBalanceTitle')}</Text>
+                <Text style={[styles.lowBalanceSub, { color: colors.warningText }]}>{t('credits.lowBalanceSub', { balance: displayedBalance })}</Text>
               </View>
-              <TouchableOpacity style={styles.topUpBtn} activeOpacity={0.8} onPress={() => handleBuy(packs[1] || packs[0])}>
+              <TouchableOpacity style={[styles.topUpBtn, { backgroundColor: colors.warningText }]} activeOpacity={0.8} onPress={() => handleBuy(packs[1] || packs[0])}>
                 <Text style={styles.topUpBtnText}>{t('credits.topUp')}</Text>
               </TouchableOpacity>
             </View>
@@ -166,18 +208,25 @@ export default function CreditsScreen() {
 
           {/* SECTION 1 - CURRENT BALANCE CARD */}
           <LinearGradient
-            colors={creditsBalance > 0 ? [Brand.blue, Brand.teal] : ['#6B7280', '#4B5563']}
+            colors={displayedBalance !== null && displayedBalance > 0 ? [Brand.blue, Brand.teal] : ['#6B7280', '#4B5563']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.balanceCard}
           >
             <Text style={styles.balanceLabel}>{t('credits.yourCredits')}</Text>
-            <Text style={styles.balanceValue}>{creditsBalance}</Text>
+            {displayedBalance === null ? (
+              <ActivityIndicator style={styles.balanceLoader} color="#FFF" size="large" />
+            ) : (
+              <Text style={styles.balanceValue}>{displayedBalance}</Text>
+            )}
             <Text style={styles.balanceSub}>{t('credits.creditsRemaining')}</Text>
+            {walletBelongsToUser && freeCreditsBalance !== null && paidCreditsBalance !== null && (
+              <Text style={styles.balanceBreakdown}>Free {freeCreditsBalance}  ·  Paid {paidCreditsBalance}</Text>
+            )}
 
             <View style={styles.balanceBottomRow}>
               <View style={styles.ratePill}>
-                <Text style={[styles.ratePillText, creditsBalance === 0 && { color: '#4B5563' }]}>
+                <Text style={[styles.ratePillText, displayedBalance === 0 && { color: colors.textSecondary }]}>
                   {t('credits.perCredit', { rate: 300 })} (10 pack)
                 </Text>
               </View>
@@ -191,53 +240,54 @@ export default function CreditsScreen() {
           <Text style={[styles.sectionLabel, { color: colors.textDim }]}>{t('credits.howItWorks')}</Text>
           <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: colors.borderFaint, borderWidth: 1 }]}>
             <View style={styles.ruleRow}>
-              <View style={[styles.iconCircle, { backgroundColor: '#D1FAE5' }]}>
+              <View style={[styles.iconCircle, { backgroundColor: colors.successFaint }]}>
                 <Text style={styles.emoji}>🔑</Text>
               </View>
               <View style={styles.ruleCenter}>
                 <Text style={[styles.ruleTitle, { color: colors.textPrimary }]}>{t('credits.rentalProps')}</Text>
-                <Text style={styles.ruleSub}>{t('credits.rentalRule')}</Text>
+                <Text style={[styles.ruleSub, { color: colors.textSecondary }]}>{t('credits.rentalRule')}</Text>
               </View>
-              <View style={[styles.examplePill, { backgroundColor: '#FEF3C7' }]}>
-                <Text style={[styles.exampleText, { color: '#92400E' }]} numberOfLines={1} adjustsFontSizeToFit>e.g. ₹40K → 2 cr</Text>
+              <View style={[styles.examplePill, { backgroundColor: colors.warningFaint }]}>
+                <Text style={[styles.exampleText, { color: colors.warningText }]} numberOfLines={1} adjustsFontSizeToFit>e.g. ₹40K → 2 cr</Text>
               </View>
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />
 
             <View style={styles.ruleRow}>
-              <View style={[styles.iconCircle, { backgroundColor: '#DBEAFE' }]}>
+              <View style={[styles.iconCircle, { backgroundColor: colors.infoFaint }]}>
                 <Text style={styles.emoji}>🏠</Text>
               </View>
               <View style={styles.ruleCenter}>
                 <Text style={[styles.ruleTitle, { color: colors.textPrimary }]}>{t('credits.buySellProps')}</Text>
-                <Text style={styles.ruleSub}>{t('credits.buySellRule')}</Text>
+                <Text style={[styles.ruleSub, { color: colors.textSecondary }]}>{t('credits.buySellRule')}</Text>
               </View>
-              <View style={[styles.examplePill, { backgroundColor: '#FEF3C7' }]}>
-                <Text style={[styles.exampleText, { color: '#92400E' }]} numberOfLines={1} adjustsFontSizeToFit>e.g. ₹65L → 2 cr</Text>
+              <View style={[styles.examplePill, { backgroundColor: colors.warningFaint }]}>
+                <Text style={[styles.exampleText, { color: colors.warningText }]} numberOfLines={1} adjustsFontSizeToFit>e.g. ₹65L → 2 cr</Text>
               </View>
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />
 
             <TouchableOpacity style={styles.ruleRow} activeOpacity={0.8} onPress={handleUnlockMock}>
-              <View style={[styles.iconCircle, { backgroundColor: '#FEE2E2' }]}>
+              <View style={[styles.iconCircle, { backgroundColor: colors.errorFaint }]}>
                 <Text style={styles.emoji}>🔓</Text>
               </View>
               <View style={styles.ruleCenter}>
                 <Text style={[styles.ruleTitle, { color: colors.textPrimary }]}>{t('credits.unlockDemo')}</Text>
-                <Text style={styles.ruleSub}>{t('credits.unlockDemoSub')}</Text>
+                <Text style={[styles.ruleSub, { color: colors.textSecondary }]}>{t('credits.unlockDemoSub')}</Text>
               </View>
-              <View style={[styles.examplePill, { backgroundColor: '#D1FAE5' }]}>
-                <Text style={[styles.exampleText, { color: '#065F46' }]} numberOfLines={1} adjustsFontSizeToFit>1 token</Text>
+              <View style={[styles.examplePill, { backgroundColor: colors.successFaint }]}>
+                <Text style={[styles.exampleText, { color: colors.successText }]} numberOfLines={1} adjustsFontSizeToFit>1 token</Text>
               </View>
             </TouchableOpacity>
           </View>
 
           {/* SECTION 3 - BUY CREDITS PACKS */}
           <Text style={[styles.sectionLabel, { color: colors.textDim }]}>{t('credits.buyPacks')}</Text>
+          {packsError && <Text style={styles.inlineError}>{packsError}</Text>}
           <View style={styles.packsContainer}>
-            {packs.map((pack, idx) => {
+            {packs.map(pack => {
               const isPopular = pack.isPopular;
               return (
                 <View key={pack.id} style={[
@@ -246,20 +296,20 @@ export default function CreditsScreen() {
                   { borderColor: isPopular ? Brand.teal : colors.borderFaint }
                 ]}>
                   {isPopular && (
-                    <View style={styles.popularBadge}>
+                    <View style={[styles.popularBadge, { backgroundColor: colors.successText }]}>
                       <Text style={styles.popularBadgeText}>{t('credits.mostPopular')}</Text>
                     </View>
                   )}
                   <View style={styles.packLeft}>
                     <Text style={[styles.packName, { color: colors.textPrimary }]}>{pack.name}</Text>
-                    <Text style={styles.packCredits}>{pack.credits} {t('credits.title').toLowerCase()}</Text>
+                    <Text style={[styles.packCredits, { color: colors.textSecondary }]}>{pack.credits} {t('credits.title').toLowerCase()}</Text>
                     <View style={styles.packRateRow}>
-                      <Text style={[styles.packRate, { color: isPopular ? '#10B981' : colors.textDim }]}>
+                      <Text style={[styles.packRate, { color: isPopular ? colors.successText : colors.textDim }]}>
                         {pack.rateText}
                       </Text>
                       {pack.saving && (
-                        <View style={styles.savingBadge}>
-                          <Text style={styles.savingText}>{pack.saving}</Text>
+                        <View style={[styles.savingBadge, { backgroundColor: colors.successFaint }]}>
+                          <Text style={[styles.savingText, { color: colors.successText }]}>{pack.saving}</Text>
                         </View>
                       )}
                     </View>
@@ -267,17 +317,11 @@ export default function CreditsScreen() {
                   <View style={styles.packRight}>
                     <Text style={[styles.packPrice, { color: colors.textPrimary }]}>{pack.price}</Text>
                     <TouchableOpacity
-                      style={[
-                        styles.packBuyBtn,
-                        isPopular ? styles.packBuyBtnFilled : styles.packBuyBtnOutlined
-                      ]}
+                      style={styles.packBuyBtn}
                       activeOpacity={0.8}
                       onPress={() => handleBuy(pack)}
                     >
-                      <Text style={[
-                        styles.packBuyBtnText,
-                        isPopular ? styles.packBuyBtnTextFilled : styles.packBuyBtnTextOutlined
-                      ]}>
+                      <Text style={styles.packBuyBtnText}>
                         {t('credits.buyBtn')}
                       </Text>
                     </TouchableOpacity>
@@ -287,12 +331,12 @@ export default function CreditsScreen() {
             })}
           </View>
 
-          {/* SECTION 4 - RECENT TRANSACTIONS (Hidden for now, can be re-enabled later) */}
-          {false && (
+          {/* SECTION 4 - RECENT WALLET TRANSACTIONS */}
+          {transactions.length > 0 && (
             <>
               <Text style={[styles.sectionLabel, { color: colors.textDim }]}>{t('credits.recentActivity')}</Text>
               <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: colors.borderFaint, borderWidth: 1 }]}>
-                {TRANSACTIONS.map((txn, index) => (
+                {transactions.slice(0, 3).map((txn, index) => (
                   <React.Fragment key={txn.id}>
                     {index > 0 && <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />}
                     <View style={styles.txnRow}>
@@ -344,16 +388,12 @@ export default function CreditsScreen() {
       <BottomSheet visible={historyVisible} onClose={() => setHistoryVisible(false)}>
         <Text style={[styles.historyModalTitle, { color: colors.textPrimary }]}>{t('credits.historyModalTitle')}</Text>
         <ScrollView style={{ maxHeight: 350, marginVertical: 12 }}>
-          {(unlockedItems.length > 0 ? unlockedItems.map((item, idx) => ({
-            id: item.id || `unlocked-${idx}`,
-            emoji: '🔓',
-            iconBg: Brand.amberLight,
-            title: item.title || item.propertyTitle || item.category || 'Unlocked Broker Contact',
-            sub: item.brokerName ? `${item.brokerName} (${item.mobileNumber || item.phone || ''})` : 'Contact Revealed (1 Token debit)',
-            amount: '-1 token',
-            amountColor: '#DC2626',
-            date: item.createdAt || item.unlockedAt ? new Date(item.createdAt || item.unlockedAt).toLocaleDateString() : 'Recent'
-          })) : TRANSACTIONS).map((txn, index) => (
+          {historyLoading && <ActivityIndicator color={Brand.teal} style={{ marginVertical: 24 }} />}
+          {!historyLoading && historyError && <Text style={styles.inlineError}>{historyError}</Text>}
+          {!historyLoading && !historyError && transactions.length === 0 && (
+            <Text style={styles.emptyHistory}>No wallet transactions yet.</Text>
+          )}
+          {!historyLoading && transactions.map((txn, index) => (
             <React.Fragment key={`hist-${txn.id}`}>
               {index > 0 && <View style={[styles.divider, { backgroundColor: colors.borderFaint }]} />}
               <View style={styles.txnRow}>
@@ -381,19 +421,6 @@ export default function CreditsScreen() {
   );
 }
 
-// ── Mock Data
-const PACKS = [
-  { id: '1', tierId: 'CREDITS_10', name: 'Starter Pack', credits: 10, rateText: '₹300 per token', price: '₹3,000', saving: null, isPopular: false, rawPrice: 3000 },
-  { id: '2', tierId: 'CREDITS_20', name: 'Standard Pack', credits: 20, rateText: '₹280 per token', price: '₹5,600', saving: 'Save ₹400', isPopular: true, rawPrice: 5600 },
-  { id: '3', tierId: 'CREDITS_50', name: 'Pro Pack', credits: 50, rateText: '₹250 per token', price: '₹12,500', saving: 'Save ₹2,500', isPopular: false, rawPrice: 12500 },
-];
-
-const TRANSACTIONS = [
-  { id: 't1', type: 'unlock', emoji: '🔓', iconBg: '#FEE2E2', title: 'Unlocked Contact', sub: '2BHK · Vijay Nagar', amount: '−1 token', amountColor: '#EF4444', date: 'Aaj, 2:30 PM' },
-  { id: 't2', type: 'purchase', emoji: '✦', iconBg: '#D1FAE5', title: 'Tokens Purchased', sub: 'Standard Pack · 20 tokens', amount: '+20 tokens', amountColor: '#10B981', date: 'Kal, 11:00 AM' },
-  { id: 't3', type: 'refund', emoji: '↩️', iconBg: '#FEF3C7', title: 'Token Refund', sub: 'Listing deleted by owner', amount: '+1 token', amountColor: '#F59E0B', date: '3 din pehle' },
-];
-
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
@@ -405,7 +432,7 @@ const styles = StyleSheet.create({
   },
   headerLeft: { width: 60 },
   headerTitle: { fontSize: 20, fontWeight: '700', flex: 1, textAlign: 'center' },
-  headerRight: { width: 60, alignItems: 'flex-end' },
+  headerRight: { minWidth: 70, alignItems: 'flex-end', flexShrink: 0 },
   historyText: { fontSize: 14, color: Brand.teal, fontWeight: '500' },
   
   accentBar: {
@@ -423,13 +450,18 @@ const styles = StyleSheet.create({
   // Banner
   lowBalanceBanner: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 1, borderRadius: 12,
+    borderWidth: 1, borderRadius: 12,
     paddingVertical: 12, paddingHorizontal: 16,
     marginBottom: 16,
   },
-  lowBalanceTitle: { fontSize: 14, fontWeight: '600', color: '#92400E' },
-  lowBalanceSub: { fontSize: 12, color: '#92400E', marginTop: 2 },
-  topUpBtn: { backgroundColor: '#F59E0B', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
+  lowBalanceTitle: { fontSize: 14, fontWeight: '600' },
+  lowBalanceSub: { fontSize: 12, marginTop: 2 },
+  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 16 },
+  errorText: { flex: 1, fontSize: 12 },
+  retryButton: { paddingHorizontal: 10, paddingVertical: 6 },
+  retryText: { fontSize: 13, fontWeight: '700' },
+  inlineError: { fontSize: 13, marginHorizontal: 4, marginBottom: 10 },
+  topUpBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
   topUpBtnText: { color: '#FFF', fontSize: 13, fontWeight: '600' },
 
   // Balance Card
@@ -440,7 +472,9 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { fontSize: 13, color: '#FFF', opacity: 0.8, fontWeight: '500' },
   balanceValue: { fontSize: 52, fontWeight: '800', color: '#FFF', marginVertical: 4 },
+  balanceLoader: { height: 70, alignSelf: 'flex-start' },
   balanceSub: { fontSize: 14, color: '#FFF', opacity: 0.8, marginBottom: 20 },
+  balanceBreakdown: { fontSize: 12, color: '#FFF', opacity: 0.8, marginTop: -14, marginBottom: 18 },
   balanceBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   ratePill: { backgroundColor: '#FFF', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
   ratePillText: { fontSize: 12, fontWeight: '600', color: '#10B981' },
@@ -498,21 +532,19 @@ const styles = StyleSheet.create({
   savingText: { color: '#065F46', fontSize: 11, fontWeight: '600' },
   packRight: { alignItems: 'flex-end', marginLeft: 16 },
   packPrice: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  packBuyBtn: { borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8, minWidth: 70, alignItems: 'center' },
-  packBuyBtnFilled: { backgroundColor: Brand.teal },
-  packBuyBtnOutlined: { borderWidth: 1.5, borderColor: Brand.teal },
-  packBuyBtnText: { fontSize: 14, fontWeight: '600' },
-  packBuyBtnTextFilled: { color: '#FFF' },
-  packBuyBtnTextOutlined: { color: Brand.teal },
+  // All Buy buttons are now identical — filled solid teal
+  packBuyBtn: { backgroundColor: Brand.teal, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8, minWidth: 70, alignItems: 'center' as const },
+  packBuyBtnText: { fontSize: 14, fontWeight: '600' as const, color: '#FFF' },
 
-  // Txn
-  txnRow: { flexDirection: 'row', alignItems: 'center', height: 56 },
-  txnCenter: { flex: 1 },
+  // Txn — fixed overlapping text: removed height:56, use minHeight + paddingVertical
+  txnRow: { flexDirection: 'row', alignItems: 'flex-start', minHeight: 56, paddingVertical: 10 },
+  txnCenter: { flex: 1, marginHorizontal: 10 },
   txnTitle: { fontSize: 14, fontWeight: '600', marginBottom: 2 },
-  txnSub: { fontSize: 12, color: '#6B7280' },
-  txnRight: { alignItems: 'flex-end' },
+  txnSub: { fontSize: 12, color: '#6B7280', flexShrink: 1 },
+  txnRight: { alignItems: 'flex-end', flexShrink: 0, minWidth: 72 },
   txnAmount: { fontSize: 14, fontWeight: '600', marginBottom: 2 },
   txnDate: { fontSize: 11, color: '#9CA3AF' },
+  emptyHistory: { color: '#6B7280', fontSize: 14, textAlign: 'center', marginVertical: 28 },
   historyLink: { marginTop: 16, alignItems: 'center' },
   historyLinkText: { fontSize: 13, color: Brand.teal, fontWeight: '500' },
   historyModalTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center', marginBottom: 16 },

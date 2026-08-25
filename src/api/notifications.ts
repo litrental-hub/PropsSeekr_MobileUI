@@ -1,98 +1,67 @@
 import apiClient from './client';
 
+export type NotificationType = 'BROKER_UNLOCK' | 'BROKER_ACCEPTED' | 'BROKER_REJECTED' | 'MATCH' | 'BROKER_REQUEST' | 'SYSTEM';
+
 export interface NotificationItem {
   notificationId: string;
-  type?: string;
-  title?: string;
-  message?: string;
-  isRead?: boolean;
-  contactUnlocked?: boolean;
-  createdAt?: string;
-  brokerName?: string;
-  mobileNumber?: string;
-  [key: string]: any;
+  type: NotificationType;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+  channelStatus?: string;
+  actionStatus?: 'pending' | 'accepted' | 'rejected' | 'expired' | 'credit_required' | string | null;
+  meta?: {
+    matchId?: number;
+    requestId?: number;
+  };
 }
 
 export interface GetNotificationsResponse {
-  status?: string;
-  unreadCount?: number;
-  data?: NotificationItem[];
+  success: boolean;
+  unreadCount: number;
+  totalCount: number;
+  page: number;
+  limit: number;
+  data: NotificationItem[];
 }
 
 export const getNotifications = async (
-  userId: string,
+  brokerId: string | number,
   page = 1,
   limit = 20,
-  filter = 'ALL'
-): Promise<GetNotificationsResponse | NotificationItem[]> => {
-  const response = await apiClient.get<GetNotificationsResponse | NotificationItem[]>(
-    `/brokers/${encodeURIComponent(userId)}/notifications?page=${page}&limit=${limit}&filter=${encodeURIComponent(filter)}`
+  filter = 'ALL',
+): Promise<GetNotificationsResponse> => {
+  const response = await apiClient.get<GetNotificationsResponse>(
+    `/brokers/${encodeURIComponent(String(brokerId))}/notifications?page=${page}&limit=${limit}&filter=${encodeURIComponent(filter)}`,
   );
   return response.data;
 };
-
-export interface MarkAsReadPayload {
-  userId: string;
-  notificationId: string;
-}
 
 export interface DefaultResponse {
-  status?: string;
+  success?: boolean;
   message?: string;
+  unreadCount?: number;
 }
 
-export const markAsRead = async (payload: MarkAsReadPayload): Promise<DefaultResponse> => {
+export const markAsRead = async (
+  brokerId: string | number,
+  notificationId: string,
+): Promise<DefaultResponse> => {
   const response = await apiClient.patch<DefaultResponse>(
-    `/notifications/${encodeURIComponent(payload.notificationId)}/read`
+    `/brokers/${encodeURIComponent(String(brokerId))}/notifications/${encodeURIComponent(notificationId)}/read`,
   );
   return response.data;
 };
 
-export interface MarkAllAsReadPayload {
-  userId: string;
-}
-
-export const markAllAsRead = async (payload: MarkAllAsReadPayload): Promise<DefaultResponse> => {
-  const response = await apiClient.post<DefaultResponse>('/notifications/mark-all-read', payload);
-  return response.data;
-};
-
-export interface UnlockContactPayload {
-  userId: string;
-  notificationId: string;
-}
-
-export interface UnlockedContactData {
-  brokerName?: string;
-  mobileNumber?: string;
-  phone?: string;
-  phoneNumber?: string;
-  remainingCredits?: number;
-  remainingTokens?: number;
-  [key: string]: any;
-}
-
-export interface UnlockContactResponse {
-  status?: string;
-  data?: UnlockedContactData;
-  message?: string;
-  brokerName?: string;
-  mobileNumber?: string;
-  phone?: string;
-  phoneNumber?: string;
-  remainingCredits?: number;
-  remainingTokens?: number;
-  [key: string]: any;
-}
-
-export const unlockBroker = async (payload: UnlockContactPayload): Promise<UnlockContactResponse> => {
-  const response = await apiClient.post<UnlockContactResponse>(
-    `/notifications/${encodeURIComponent(payload.notificationId)}/unlock-broker?userId=${encodeURIComponent(payload.userId)}`
+export const markAllAsRead = async (
+  brokerId: string | number,
+): Promise<DefaultResponse> => {
+  const response = await apiClient.post<DefaultResponse>(
+    `/brokers/${encodeURIComponent(String(brokerId))}/notifications/mark-all-read`,
   );
   return response.data;
 };
-
-// ── Additional Notification Endpoints (Entire Flow) ───────────────────
 
 export interface NotificationPreferences {
   whatsapp_enabled: boolean;

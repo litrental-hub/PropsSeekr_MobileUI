@@ -20,7 +20,8 @@ import LinearGradient from 'react-native-linear-gradient';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useAppTheme, Brand } from '../../theme/useAppTheme';
+import { useAppTheme, Brand, BtnStyle } from '../../theme/useAppTheme';
+import { Card, Shadow, FontSize, FontWeight, Spacing, Radius } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -30,10 +31,10 @@ import { getProfile, updateProfile, uploadProfilePhoto } from '../../api/profile
 // ── Validation ─────────────────────────────────────────────
 const profileSchema = z.object({
   name: z.string().min(2, 'Name is required'),
-  companyName: z.string().min(2, 'Company name is required'),
+  companyName: z.string().optional().or(z.literal('')),
   companyGst: z.string().optional(),
-  companyAddress: z.string().min(5, 'Address is too short'),
-  email: z.string().email('Must be a valid email address'),
+  companyAddress: z.string().optional().or(z.literal('')),
+  email: z.string().email('Must be a valid email address').optional().or(z.literal('')),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -76,7 +77,7 @@ export default function ProfileScreen() {
           if (profile) {
             reset({
               name: profile.name || profile.fullName || '',
-              companyName: profile.companyName || (profile as any).agencyName || '',
+              companyName: profile.companyName || (profile as any).agencyName || (profile as any).brokerage_name || '',
               companyGst: profile.companyGst || (profile as any).gstNumber || '',
               companyAddress: profile.companyAddress || (profile as any).officeAddress || '',
               email: profile.email || '',
@@ -222,12 +223,7 @@ export default function ProfileScreen() {
     <View style={[styles.root, { backgroundColor: colors.navy }]}>
       <StatusBar barStyle={type === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={colors.navy} />
 
-      {/* Background */}
-      <LinearGradient
-        colors={[colors.bgStart, colors.bgMid, colors.bgEnd]}
-        locations={[0, 0.5, 1]}
-        style={StyleSheet.absoluteFill}
-      />
+      {/* Removed the dark background gradient, using safe area directly with a clean background */}
 
       {/* Top accent bar */}
       <LinearGradient
@@ -237,7 +233,7 @@ export default function ProfileScreen() {
         style={styles.accentBar}
       />
 
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.navy }]} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -248,30 +244,30 @@ export default function ProfileScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <View style={styles.headerRow}>
               <View>
-                <Text style={[styles.headline, { color: colors.textPrimary, marginBottom: 0 }]}>{t('profile.myProfile')}</Text>
-                <Text style={[styles.sub, { color: colors.textSecondary }]}>{t('profile.manageDetails')}</Text>
+                <Text style={[styles.headline, { color: colors.textPrimary }]}>{t('profile.myProfile', 'My Profile')}</Text>
+                <Text style={[styles.sub, { color: colors.textSecondary }]}>{t('profile.manageDetails', 'Manage your broker details')}</Text>
               </View>
-              <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={{ padding: 8 }}>
-                <MaterialCommunityIcons name="cog" size={28} color={colors.textPrimary} />
+              <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.settingsBtn}>
+                <MaterialCommunityIcons name="cog" size={26} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
             {/* Profile Photo Section */}
             <View style={styles.photoContainer}>
-              <View style={[styles.photoWrap, { borderColor: Brand.blueBorder, backgroundColor: colors.inputBg }]}>
+              <View style={[styles.photoWrap, { backgroundColor: colors.cardBg, borderColor: colors.borderFaint }]}>
                 {photoUri ? (
                   <Image source={{ uri: photoUri }} style={styles.photo} />
                 ) : (
-                  <Text style={{ fontSize: 40 }}>👤</Text>
+                  <MaterialCommunityIcons name="account" size={56} color={Brand.blue} />
                 )}
                 <TouchableOpacity
                   style={styles.editPhotoBadge}
                   activeOpacity={0.8}
                   onPress={handlePhotoChange}
                 >
-                  <Text style={{ fontSize: 12 }}>📷</Text>
+                  <MaterialCommunityIcons name="camera" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -279,105 +275,95 @@ export default function ProfileScreen() {
             {/* Form */}
             <View style={styles.form}>
               {/* Broker Name */}
-              <Field label="Broker Name *" error={errors.name?.message} colors={colors}>
+              <Field label="Broker Name *" error={errors.name?.message}>
                 <Controller
                   control={control}
                   name="name"
                   render={({ field: { onChange, onBlur, value } }) => (
-                    <InputBox
-                      prefix="👤"
-                      placeholder=""
-                      hasError={!!errors.name}
-                      value={value}
-                      onBlur={onBlur}
-                      onChangeText={onChange}
-                      colors={colors}
-                      Brand={Brand}
-                    />
+                     <InputBox
+                       iconName="account"
+                       placeholder="e.g. Test User"
+                       hasError={!!errors.name}
+                       value={value}
+                       onBlur={onBlur}
+                       onChangeText={onChange}
+                     />
                   )}
                 />
               </Field>
 
               {/* Email */}
-              <Field label={t('profile.emailAddress')} error={errors.email?.message} colors={colors}>
+              <Field label={t('profile.emailAddress', 'Email Address')} error={errors.email?.message}>
                 <Controller
                   control={control}
                   name="email"
                   render={({ field: { onChange, onBlur, value } }) => (
-                    <InputBox
-                      prefix="✉️"
-                      placeholder="e.g. name@company.com"
-                      hasError={!!errors.email}
-                      value={value}
-                      onBlur={onBlur}
-                      onChangeText={onChange}
-                      keyboardType="email-address"
-                      colors={colors}
-                      Brand={Brand}
-                    />
+                     <InputBox
+                       iconName="email-outline"
+                       placeholder="e.g. name@company.com"
+                       hasError={!!errors.email}
+                       value={value}
+                       onBlur={onBlur}
+                       onChangeText={onChange}
+                       keyboardType="email-address"
+                     />
                   )}
                 />
               </Field>
 
-              <SectionDivider title={t('profile.companyDetails')} colors={colors} Brand={Brand} />
+              <SectionDivider title={t('profile.companyDetails', 'COMPANY DETAILS')} Brand={Brand} />
 
               {/* Company Name */}
-              <Field label={t('profile.companyName')} error={errors.companyName?.message} colors={colors}>
+              <Field label={t('profile.companyName', 'Company Name *')} error={errors.companyName?.message}>
                 <Controller
                   control={control}
                   name="companyName"
                   render={({ field: { onChange, onBlur, value } }) => (
-                    <InputBox
-                      prefix="🏢"
-                      placeholder="e.g. PropSeekr Realty"
-                      hasError={!!errors.companyName}
-                      value={value}
-                      onBlur={onBlur}
-                      onChangeText={onChange}
-                      colors={colors}
-                      Brand={Brand}
-                    />
+                     <InputBox
+                       iconName="office-building"
+                       placeholder="e.g. PropSeekr Realty"
+                       hasError={!!errors.companyName}
+                       value={value}
+                       onBlur={onBlur}
+                       onChangeText={onChange}
+                     />
                   )}
                 />
               </Field>
 
               {/* GST */}
-              <Field label={t('profile.companyGst')} error={errors.companyGst?.message} colors={colors}>
+              <Field label={t('profile.companyGst', 'Company GST (Optional)')} error={errors.companyGst?.message}>
                 <Controller
                   control={control}
                   name="companyGst"
                   render={({ field: { onChange, onBlur, value } }) => (
-                    <InputBox
-                      prefix="🧾"
-                      placeholder="e.g. 23ABCDE..."
-                      hasError={!!errors.companyGst}
-                      value={value ?? ''}
-                      onBlur={onBlur}
-                      onChangeText={onChange}
-                      autoCapitalize="characters"
-                      colors={colors}
-                      Brand={Brand}
-                    />
+                     <InputBox
+                       iconName="receipt"
+                       placeholder="e.g. 23ABCDE..."
+                       hasError={!!errors.companyGst}
+                       value={value ?? ''}
+                       onBlur={onBlur}
+                       onChangeText={onChange}
+                       autoCapitalize="characters"
+                     />
                   )}
                 />
               </Field>
 
               {/* Address */}
-              <Field label={t('profile.companyAddress')} error={errors.companyAddress?.message} colors={colors}>
+              <Field label={t('profile.companyAddress', 'Company Address *')} error={errors.companyAddress?.message}>
                 <Controller
                   control={control}
                   name="companyAddress"
                   render={({ field: { onChange, onBlur, value } }) => (
-                    <InputBox
-                      prefix="📍"
-                      placeholder="e.g. Vijay Nagar, Indore"
-                      hasError={!!errors.companyAddress}
-                      value={value}
-                      onBlur={onBlur}
-                      onChangeText={onChange}
-                      colors={colors}
-                      Brand={Brand}
-                    />
+                     <InputBox
+                       iconName="map-marker-outline"
+                       placeholder="e.g. Vijay Nagar, Indore"
+                       hasError={!!errors.companyAddress}
+                       value={value}
+                       onBlur={onBlur}
+                       onChangeText={onChange}
+                     />
                   )}
                 />
               </Field>
@@ -400,8 +386,8 @@ export default function ProfileScreen() {
               </TouchableOpacity>
 
               {/* Logout Button */}
-              <TouchableOpacity onPress={logout} activeOpacity={0.75} style={styles.logoutBtn}>
-                <Text style={styles.logoutText}>{t('profile.logout')}</Text>
+              <TouchableOpacity testID="profile-logout" onPress={logout} activeOpacity={0.75} style={[styles.logoutBtn, { backgroundColor: colors.errorFaint, borderColor: colors.errorText }]}>
+                <Text style={[styles.logoutText, { color: colors.errorText }]}>{t('profile.logout')}</Text>
               </TouchableOpacity>
 
             </View>
@@ -414,10 +400,11 @@ export default function ProfileScreen() {
 
 // ── Form Helpers (Reusable internal components) ───────────────
 
-function Field({ label, error, children, colors }: { label: string; error?: string; children: React.ReactNode; colors: any }) {
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+  const { colors } = useAppTheme();
   return (
     <View style={styles.fieldWrap}>
-      <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[styles.fieldLabel, { color: colors.textPrimary }]}>{label}</Text>
       {children}
       {error && <Text style={[styles.errorText, { color: colors.errorText }]}>{error}</Text>}
     </View>
@@ -425,7 +412,7 @@ function Field({ label, error, children, colors }: { label: string; error?: stri
 }
 
 function InputBox({
-  prefix,
+  iconName,
   placeholder,
   hasError,
   value,
@@ -434,10 +421,8 @@ function InputBox({
   keyboardType,
   maxLength,
   autoCapitalize,
-  colors,
-  Brand,
 }: {
-  prefix?: string;
+  iconName?: string;
   placeholder: string;
   hasError?: boolean;
   value: string;
@@ -446,23 +431,16 @@ function InputBox({
   keyboardType?: any;
   maxLength?: number;
   autoCapitalize?: any;
-  colors: any;
-  Brand: any;
 }) {
+  const { colors } = useAppTheme();
   return (
-    <View
-      style={[
-        styles.inputBox,
-        { backgroundColor: colors.inputBg, borderColor: Brand.blueBorder },
-        hasError && { borderColor: colors.errorText, backgroundColor: colors.errorFaint },
-      ]}
-    >
-      {prefix && (
-        <>
-          <Text style={[styles.inputPrefix, { color: colors.textPrimary }]}>{prefix}</Text>
-          <View style={[styles.inputDivider, { backgroundColor: Brand.blueBorder }]} />
-        </>
+    <View style={[styles.inputBox, { backgroundColor: colors.cardBgLight, borderColor: colors.borderFaint }, hasError && { borderColor: colors.errorText, backgroundColor: colors.errorFaint }]}>
+      {iconName && (
+        <View style={styles.inputIconBox}>
+          <MaterialCommunityIcons name={iconName} size={22} color={Brand.blue} />
+        </View>
       )}
+      <View style={[styles.inputDivider, { backgroundColor: colors.borderFaint }]} />
       <TextInput
         style={[styles.inputText, { color: colors.textPrimary }]}
         placeholder={placeholder}
@@ -478,131 +456,158 @@ function InputBox({
   );
 }
 
-function SectionDivider({ title, desc, colors, Brand }: { title: string; desc?: string; colors: any; Brand: any }) {
+function SectionDivider({ title, desc, Brand }: { title: string; desc?: string; Brand: any }) {
+  const { colors } = useAppTheme();
   return (
     <View style={styles.sectionDividerWrap}>
-      <LinearGradient
-        colors={[Brand.blue, Brand.teal]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.sectionDividerLine}
-      />
+      <View style={styles.sectionDividerLine} />
       <Text style={styles.sectionTitle}>{title}</Text>
-      {desc && <Text style={[styles.sectionDesc, { color: colors.textDim }]}>{desc}</Text>}
+      {desc && <Text style={[styles.sectionDesc, { color: colors.textSecondary }]}>{desc}</Text>}
     </View>
   );
 }
 
 // ── Styles ─────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 28, paddingBottom: 40, paddingTop: 20 },
+  root: { flex: 1, backgroundColor: '#F8FAFC' },
+  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 16 },
 
   accentBar: {
-    height: 3,
+    height: 4,
     position: 'absolute',
     top: 0, left: 0, right: 0,
     zIndex: 10,
   },
 
-  segmentWrap: {
-    flexDirection: 'row',
-    gap: 8,
+  headerRow: {
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 24,
   },
-  segmentBtn: {
-    flex: 1,
-    height: 44,
-    borderWidth: 1.5,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segmentText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
   headline: {
-    fontSize: 30, fontWeight: '800',
-    letterSpacing: -0.5, marginBottom: 6,
+    fontSize: FontSize.h1,      // 28dp — H1 token
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.5,
+    marginBottom: 4,
   },
   sub: {
-    fontSize: 14, marginBottom: 20,
+    fontSize: FontSize.body,    // 14dp — body token
+    color: '#64748B',
+  },
+  settingsBtn: {
+    padding: 8,
   },
 
   photoContainer: {
     alignItems: 'center',
-    marginVertical: 20,
+    marginVertical: 12,
+    marginBottom: 32,
   },
   photoWrap: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 2,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    shadowColor: Brand.blue,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 3,
   },
   photo: {
     width: '100%',
     height: '100%',
-    borderRadius: 50,
+    borderRadius: 55,
   },
   editPhotoBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#10B981',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    bottom: -2,
+    right: -2,
+    backgroundColor: Brand.teal,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: '#050D1F', // Gives it a cutout look against dark background
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
 
   form: {},
 
-  fieldWrap: { marginBottom: 18 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  fieldWrap: { marginBottom: 20 },
+  fieldLabel: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8 },
 
   inputBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderWidth: 1.5,
-    borderRadius: 14, paddingHorizontal: 16, height: 54,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: Card.radius,  // 16dp — standardised token
+    height: 56,
+    paddingHorizontal: 8,
   },
-  inputPrefix: { fontSize: 14, fontWeight: '600' },
-  inputDivider: { width: 1, height: 18 },
-  inputText: { flex: 1, fontSize: 15, padding: 0 },
+  inputBoxError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  inputIconBox: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 8,
+  },
+  inputText: {
+    flex: 1,
+    fontSize: 15,
+    color: '#0F172A',
+    fontWeight: '500',
+    padding: 0, // override android default padding
+  },
+  errorText: { fontSize: FontSize.caption, marginTop: 6, fontWeight: FontWeight.medium, color: '#EF4444' },
 
-  errorText: { fontSize: 12, marginTop: 5, fontWeight: '500' },
-
-  sectionDividerWrap: { marginVertical: 24 },
-  sectionDividerLine: { height: 1.5, borderRadius: 1, marginBottom: 12 },
-  sectionTitle: { fontSize: 13, fontWeight: '800', color: '#10B981', marginBottom: 3, letterSpacing: 1.5 },
-  sectionDesc: { fontSize: 12 },
+  sectionDividerWrap: { marginTop: Spacing.md, marginBottom: Spacing.xxl },
+  sectionDividerLine: { height: 1.5, backgroundColor: Brand.teal, marginBottom: Spacing.md },
+  sectionTitle: { fontSize: FontSize.h2, fontWeight: '800', color: Brand.teal, letterSpacing: 1.2 },
+  sectionDesc: { fontSize: FontSize.caption, color: '#64748B' },
 
   ctaBtn: {
-    borderRadius: 16, height: 56,
+    borderRadius: Radius.lg,  // 16dp token
+    height: 56,
     alignItems: 'center', justifyContent: 'center',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45, shadowRadius: 14, elevation: 8,
+    ...Shadow.teal,
   },
-  ctaBtnText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
+  ctaBtnText: { fontSize: FontSize.cardTitle, fontWeight: FontWeight.bold, color: '#FFFFFF', letterSpacing: 0.3 },
 
   logoutBtn: {
     marginTop: 24,
     alignItems: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(239,68,68,0.3)',
+    paddingVertical: 16,
+    borderRadius: 16,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
   logoutText: {
-    color: '#F87171',
+    color: '#DC2626',
     fontSize: 15,
     fontWeight: '700',
   },

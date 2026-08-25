@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigatorScreenParams } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { enableScreens } from 'react-native-screens';
 import { useAuthStore } from '../store/authStore';
@@ -17,7 +17,7 @@ import LockScreen from '../screens/Auth/LockScreen';
 import { Colors } from '../constants/colors';
 
 // Main App
-import BottomTabNavigator from './BottomTabNavigator';
+import BottomTabNavigator, { BottomTabParamList } from './BottomTabNavigator';
 
 // Shared / Modal Screens
 import AddPropertyScreen from '../screens/Properties/AddPropertyScreen';
@@ -38,7 +38,7 @@ export type RootStackParamList = {
   LockScreen: undefined;
 
   // Main
-  MainTabs: undefined;
+  MainTabs: NavigatorScreenParams<BottomTabParamList> | undefined;
 
   // Modals
   AddProperty: { editId?: string; initialData?: any };

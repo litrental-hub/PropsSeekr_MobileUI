@@ -28,8 +28,10 @@ export interface VerifyPaymentPayload {
 
 export interface VerifyPaymentResponse {
   success: boolean;
+  status?: string;
   message?: string;
   newBalance?: number;
+  creditsBalance?: number;
 }
 
 export const verifyPayment = async (data: VerifyPaymentPayload): Promise<VerifyPaymentResponse> => {
@@ -80,4 +82,3 @@ export const getMockPaymentDetails = async (paymentId: string | number) => {
   const response = await apiClient.get(`/payments/${paymentId}`);
   return response.data;
 };
-

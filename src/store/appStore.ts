@@ -29,8 +29,17 @@ interface AppState {
   pendingConfirmations: number;
   setPendingConfirmations: (count: number) => void;
 
-  creditsBalance: number;
-  setCreditsBalance: (balance: number) => void;
+  creditsBalance: number | null;
+  freeCreditsBalance: number | null;
+  paidCreditsBalance: number | null;
+  walletBrokerId: string | null;
+  walletStatus: 'idle' | 'loading' | 'ready' | 'error';
+  walletError: string | null;
+  walletLastSyncedAt: string | null;
+  beginWalletLoad: (brokerId: string | number) => void;
+  setWalletSnapshot: (brokerId: string | number, freeBalance: number, paidBalance: number, syncedAt?: string) => void;
+  setWalletError: (brokerId: string | number, message: string) => void;
+  resetWallet: () => void;
 
   location: LocationState;
   setLocation: (location: LocationState) => void;
@@ -63,8 +72,50 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingConfirmations: 0,
   setPendingConfirmations: count => set({ pendingConfirmations: count }),
 
-  creditsBalance: 0,
-  setCreditsBalance: balance => set({ creditsBalance: balance }),
+  creditsBalance: null,
+  freeCreditsBalance: null,
+  paidCreditsBalance: null,
+  walletBrokerId: null,
+  walletStatus: 'idle',
+  walletError: null,
+  walletLastSyncedAt: null,
+  beginWalletLoad: brokerId => set(state => {
+    const normalizedBrokerId = String(brokerId);
+    const brokerChanged = state.walletBrokerId !== normalizedBrokerId;
+    return {
+      walletBrokerId: normalizedBrokerId,
+      walletStatus: 'loading',
+      walletError: null,
+      creditsBalance: brokerChanged ? null : state.creditsBalance,
+      freeCreditsBalance: brokerChanged ? null : state.freeCreditsBalance,
+      paidCreditsBalance: brokerChanged ? null : state.paidCreditsBalance,
+      walletLastSyncedAt: brokerChanged ? null : state.walletLastSyncedAt,
+    };
+  }),
+  setWalletSnapshot: (brokerId, freeBalance, paidBalance, syncedAt) => set({
+    walletBrokerId: String(brokerId),
+    freeCreditsBalance: freeBalance,
+    paidCreditsBalance: paidBalance,
+    creditsBalance: freeBalance + paidBalance,
+    walletStatus: 'ready',
+    walletError: null,
+    walletLastSyncedAt: syncedAt || new Date().toISOString(),
+  }),
+  setWalletError: (brokerId, message) => set(state => ({
+    walletBrokerId: String(brokerId),
+    walletStatus: 'error',
+    walletError: message,
+    creditsBalance: state.walletBrokerId === String(brokerId) ? state.creditsBalance : null,
+  })),
+  resetWallet: () => set({
+    creditsBalance: null,
+    freeCreditsBalance: null,
+    paidCreditsBalance: null,
+    walletBrokerId: null,
+    walletStatus: 'idle',
+    walletError: null,
+    walletLastSyncedAt: null,
+  }),
 
   location: (() => {
     const saved = storage.getString('active_location');

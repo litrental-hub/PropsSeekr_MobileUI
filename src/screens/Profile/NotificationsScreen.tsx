@@ -6,8 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  Linking,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -19,13 +18,13 @@ import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { useAppStore } from '../../store/appStore';
 import { useAuthStore } from '../../store/authStore';
-import { getNotifications, markAsRead, markAllAsRead as apiMarkAllAsRead, unlockBroker } from '../../api/notifications';
+import { getNotifications, markAsRead, markAllAsRead as apiMarkAllAsRead } from '../../api/notifications';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 interface NotificationItem {
   id: string;
-  type: 'BROKER_UNLOCK' | 'MATCH' | 'BROKER_REQUEST' | 'SYSTEM';
+  type: 'BROKER_UNLOCK' | 'BROKER_ACCEPTED' | 'BROKER_REJECTED' | 'MATCH' | 'BROKER_REQUEST' | 'SYSTEM';
   title: string;
   body: string;
   timestamp: string;
@@ -33,145 +32,86 @@ interface NotificationItem {
   requiresTokenUnlock?: boolean;
   isContactUnlocked?: boolean;
   tokenCost?: number;
+  actionStatus?: string | null;
   meta?: {
     brokerName?: string;
     brokerPhone?: string;
     propertyTitle?: string;
-    matchId?: string;
+    matchId?: number;
+    requestId?: number;
   };
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'notif-1',
-    type: 'BROKER_UNLOCK',
-    title: 'Match Unlock Request 🔓',
-    body: 'A matching broker owner initiated an unlock request for your listing: 2BHK Semi-Furnished Flat! Tap below to view in Matches screen and accept to unlock contact details.',
-    timestamp: '10 mins ago',
-    isRead: false,
-    requiresTokenUnlock: true,
-    isContactUnlocked: false,
-    tokenCost: 1,
-    meta: {
-      brokerName: 'Rahul Kumar',
-      brokerPhone: '+919876543210',
-      propertyTitle: '2BHK Semi-Furnished Flat',
-    },
-  },
-  {
-    id: 'notif-2',
-    type: 'MATCH',
-    title: 'New Property Match Found! 🤝',
-    body: 'A new 3BHK Flat in South Tukoganj matching your client requirement (₹50–70L budget) was just listed!',
-    timestamp: '1 hour ago',
-    isRead: false,
-    meta: {
-      matchId: 'match-101',
-      propertyTitle: '3BHK Flat in South Tukoganj',
-    },
-  },
-  {
-    id: 'notif-3',
-    type: 'BROKER_REQUEST',
-    title: 'Collaboration & Site Visit Request 📩',
-    body: 'Amit Sharma is requesting additional photos and a site visit slot for Commercial Office Space (AB Road).',
-    timestamp: '3 hours ago',
-    isRead: false,
-    meta: {
-      brokerName: 'Amit Sharma',
-      brokerPhone: '+919811122233',
-    },
-  },
-  {
-    id: 'notif-4',
-    type: 'BROKER_UNLOCK',
-    title: 'Broker Unlocked Your Contact 🔓',
-    body: 'Priyanka Patel unlocked contact for your 3BHK Luxury Penthouse listing in New Palasia.',
-    timestamp: 'Yesterday',
-    isRead: true,
-    meta: {
-      brokerName: 'Priyanka Patel',
-      brokerPhone: '+919822233344',
-      propertyTitle: '3BHK Luxury Penthouse',
-    },
-  },
-  {
-    id: 'notif-5',
-    type: 'MATCH',
-    title: 'New Rental Match Available 🏠',
-    body: 'Studio Apartment near IT Park (Vijay Nagar) is now available at ₹13,500/mo, matching your active requirement.',
-    timestamp: '2 days ago',
-    isRead: true,
-    meta: {
-      matchId: 'match-102',
-      propertyTitle: 'Studio Apartment near IT Park',
-    },
-  },
-];
-
 type FilterType = 'All' | 'Unread' | 'Matches' | 'Broker Requests';
+
+function formatNotificationTime(value: string): string {
+  const createdAt = new Date(value);
+  if (Number.isNaN(createdAt.getTime())) return 'Recently';
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - createdAt.getTime()) / 60000));
+  if (elapsedMinutes < 1) return 'Just now';
+  if (elapsedMinutes < 60) return `${elapsedMinutes} min${elapsedMinutes === 1 ? '' : 's'} ago`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours} hour${elapsedHours === 1 ? '' : 's'} ago`;
+  return createdAt.toLocaleDateString();
+}
 
 export default function NotificationsScreen() {
   const navigation = useNavigation<Nav>();
   const { colors, type } = useAppTheme();
   const isDark = type === 'dark';
   const setUnreadNotifications = useAppStore(s => s.setUnreadNotifications);
-  const creditsBalance = useAppStore(s => s.creditsBalance);
-  const setCreditsBalance = useAppStore(s => s.setCreditsBalance);
-  const userId = useAuthStore(s => s.user?.id || '3030be5f-703c-448d-aebb-33960f9d8f4e');
+  const unreadCount = useAppStore(s => s.unreadNotifications);
+  const brokerId = useAuthStore(s => s.user?.brokerId);
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<FilterType>('All');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
-
-  React.useEffect(() => {
-    if (userId) {
-      fetchNotifications();
+  const fetchNotifications = React.useCallback(async () => {
+    if (!brokerId) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const filterParam = selectedFilter.toUpperCase().replace(' ', '_');
+      const res = await getNotifications(brokerId, 1, 20, filterParam);
+      setNotifications(res.data.map(n => ({
+        id: n.notificationId,
+        type: n.type,
+        title: n.title,
+        body: n.message,
+        timestamp: formatNotificationTime(n.createdAt),
+        isRead: n.isRead,
+        requiresTokenUnlock: n.type === 'BROKER_UNLOCK',
+        isContactUnlocked: false,
+        tokenCost: 1,
+        actionStatus: n.actionStatus,
+        meta: n.meta,
+      })));
+      setUnreadNotifications(res.unreadCount);
+    } catch (e) {
+      console.warn('Failed to fetch notifications from API.', e);
+      setNotifications([]);
+      setLoadError('Could not load notifications. Pull back and try again.');
+    } finally {
+      setLoading(false);
     }
-  }, [userId, selectedFilter]);
+  }, [brokerId, selectedFilter, setUnreadNotifications]);
 
   useFocusEffect(
     React.useCallback(() => {
-      if (userId) {
+      if (brokerId) {
         fetchNotifications();
       }
-    }, [userId, selectedFilter])
+    }, [brokerId, fetchNotifications])
   );
-
-  const fetchNotifications = async () => {
-    try {
-      const filterParam = selectedFilter.toUpperCase().replace(' ', '_');
-      const res = await getNotifications(userId, 1, 20, filterParam);
-      const list = 'data' in res ? res.data : (Array.isArray(res) ? res : []);
-      if (list && list.length > 0) {
-        setNotifications(list.map((n: any) => ({
-          id: n.notificationId || n.id || Math.random().toString(),
-          type: n.type || 'SYSTEM',
-          title: n.title || 'Notification',
-          body: n.message || n.body || '',
-          timestamp: n.createdAt || n.timestamp || 'Recently',
-          isRead: !!n.isRead,
-          requiresTokenUnlock: n.type === 'BROKER_UNLOCK' || !n.contactUnlocked,
-          isContactUnlocked: !!n.contactUnlocked,
-          tokenCost: 1,
-          meta: n.meta || {
-            brokerName: n.brokerName,
-            brokerPhone: n.mobileNumber || n.brokerPhone,
-          }
-        })));
-      }
-    } catch (e) {
-      console.warn('Failed to fetch notifications from API, showing cached/initial list.', e);
-    }
-  };
 
   const handleMarkAllAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     setUnreadNotifications(0);
-    if (userId) {
+    if (brokerId) {
       try {
-        await apiMarkAllAsRead({ userId });
+        await apiMarkAllAsRead(brokerId);
       } catch (e) {
         console.warn('Mark all read error:', e);
       }
@@ -181,116 +121,52 @@ export default function NotificationsScreen() {
   const handleToggleRead = async (id: string) => {
     setNotifications(prev => {
       const updated = prev.map(n => n.id === id ? { ...n, isRead: true } : n);
-      setUnreadNotifications(updated.filter(item => !item.isRead).length);
       return updated;
     });
-    if (userId) {
+    if (brokerId) {
       try {
-        await markAsRead({ userId, notificationId: id });
+        const response = await markAsRead(brokerId, id);
+        if (response.unreadCount !== undefined) {
+          setUnreadNotifications(response.unreadCount);
+        }
       } catch (e) {
         console.warn('Mark read error:', e);
       }
     }
   };
 
-  const handleUnlockBrokerContact = (id: string, name?: string, tokenCost = 1) => {
-    Alert.alert(
-      'Unlock Broker Contact?',
-      `Would you like to see ${name || 'the broker'}'s contact details? Unlocking will debit ${tokenCost} Token from your balance (${creditsBalance} available).`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Unlock (${tokenCost} Token)`,
-          onPress: async () => {
-            if (creditsBalance < tokenCost && creditsBalance !== 0) {
-              Alert.alert('Insufficient Tokens', 'Please purchase more tokens to unlock contact details.', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Buy Tokens', onPress: () => navigation.navigate('Credits' as any) }
-              ]);
-              return;
-            }
-            try {
-              if (userId) {
-                const res = await unlockBroker({ userId, notificationId: id });
-                const data = res.data || res;
-                const remCredits = data.remainingCredits ?? data.remainingTokens ?? (creditsBalance > 0 ? creditsBalance - tokenCost : 0);
-                setCreditsBalance(remCredits);
-                const brokerPhone = data.mobileNumber || data.phone || data.phoneNumber || '+919876543210';
-                const brokerName = data.brokerName || name || 'Broker';
-                setNotifications(prev => prev.map(item => {
-                  if (item.id === id) {
-                    return {
-                      ...item,
-                      isContactUnlocked: true,
-                      isRead: true,
-                      body: `Contact Unlocked! ${brokerName} (${brokerPhone}) unlocked your listing: ${item.meta?.propertyTitle || 'Property'}.`,
-                      meta: { ...item.meta, brokerName, brokerPhone }
-                    };
-                  }
-                  return item;
-                }));
-                Alert.alert('Success!', `${brokerName}'s contact details are now unlocked and available to call.`);
-                return;
-              }
-            } catch (err: any) {
-              console.warn('API unlock error, falling back to local simulation:', err);
-            }
-
-            // Fallback if no userId or API error
-            if (creditsBalance > 0) {
-              setCreditsBalance(creditsBalance - tokenCost);
-            }
-            setNotifications(prev => prev.map(item => {
-              if (item.id === id) {
-                return {
-                  ...item,
-                  isContactUnlocked: true,
-                  isRead: true,
-                  body: `Contact Unlocked! ${item.meta?.brokerName || 'Broker'} (${item.meta?.brokerPhone || ''}) unlocked your listing: ${item.meta?.propertyTitle || 'Property'}.`,
-                };
-              }
-              return item;
-            }));
-            Alert.alert('Success!', `${name || 'Broker'}'s contact details are now unlocked and available to call.`);
-          },
-        },
-      ]
-    );
-  };
-
-  const handleCallBroker = (phone?: string, name?: string) => {
-    if (!phone) return;
-    Alert.alert(
-      `Call ${name || 'Broker'}?`,
-      `Would you like to dial ${phone}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Call', onPress: () => Linking.openURL(`tel:${phone}`).catch(() => {}) },
-      ]
-    );
-  };
-
-  const handleViewMatch = () => {
-    navigation.navigate('Matches' as any);
+  const handleViewMatch = (item: NotificationItem) => {
+    if (!item.isRead) {
+      void handleToggleRead(item.id);
+    }
+    if (!item.meta?.matchId) return;
+    navigation.navigate('MainTabs', {
+      screen: 'Matches',
+      params: { matchId: item.meta.matchId },
+    });
   };
 
   const filteredNotifications = notifications.filter(n => {
     if (selectedFilter === 'Unread') return !n.isRead;
     if (selectedFilter === 'Matches') return n.type === 'MATCH';
-    if (selectedFilter === 'Broker Requests') return n.type === 'BROKER_UNLOCK' || n.type === 'BROKER_REQUEST';
+    if (selectedFilter === 'Broker Requests') return n.type === 'BROKER_UNLOCK' || n.type === 'BROKER_REQUEST' || n.type === 'BROKER_ACCEPTED' || n.type === 'BROKER_REJECTED';
     return true;
   });
 
-  const getIconForType = (itemType: NotificationItem['type']) => {
-    switch (itemType) {
-      case 'BROKER_UNLOCK':
-        return { name: 'lock-open-check-outline', color: '#10B981', bg: 'rgba(16,185,129,0.15)' };
-      case 'MATCH':
-        return { name: 'handshake-outline', color: '#2563EB', bg: 'rgba(37,99,235,0.15)' };
-      case 'BROKER_REQUEST':
-        return { name: 'account-question-outline', color: '#F59E0B', bg: 'rgba(245,158,11,0.15)' };
+  const getNotificationIcon = (type: string, colors: any) => {
+    switch (type) {
+      case 'CONTACT_UNLOCKED':
+        return { name: 'lock-open-check-outline', color: colors.successText, bg: colors.successFaint };
+      case 'BROKER_ACCEPTED':
+        return { name: 'handshake-outline', color: colors.infoText, bg: colors.infoFaint };
+      case 'CONNECTION_REQUESTED':
+        return { name: 'account-question-outline', color: colors.warningText, bg: colors.warningFaint };
+      case 'BROKER_CONFIRMED':
+        return { name: 'check-decagram-outline', color: colors.successText, bg: colors.successFaint };
+      case 'BROKER_REJECTED':
+        return { name: 'close-circle-outline', color: colors.errorText, bg: colors.errorFaint };
       default:
-        return { name: 'bell-outline', color: '#64748B', bg: 'rgba(100,116,139,0.15)' };
+        return { name: 'bell-outline', color: colors.textSecondary, bg: colors.borderFaint };
     }
   };
 
@@ -374,17 +250,29 @@ export default function NotificationsScreen() {
 
         {/* ── Notification List ── */}
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {filteredNotifications.length === 0 ? (
+          {loading ? (
+            <View style={styles.emptyContainer}>
+              <ActivityIndicator size="large" color={Brand.teal} />
+              <Text style={[styles.emptySub, { color: colors.textSecondary }]}>Loading notifications...</Text>
+            </View>
+          ) : filteredNotifications.length === 0 ? (
             <View style={styles.emptyContainer}>
               <MaterialCommunityIcons name="bell-sleep-outline" size={60} color={colors.textDim} />
-              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No Notifications Here</Text>
-              <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-                We will notify you immediately when another broker unlocks your contact or a matching property is found!
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+                {loadError ? 'Notifications unavailable' : 'No Notifications Here'}
               </Text>
+              <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                {loadError || 'We will notify you when another broker requests an unlock or a matching property is found.'}
+              </Text>
+              {loadError ? (
+                <TouchableOpacity style={styles.dismissBtn} onPress={fetchNotifications}>
+                  <Text style={styles.markReadText}>Retry</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : (
             filteredNotifications.map(item => {
-              const iconStyle = getIconForType(item.type);
+              const iconConfig = getNotificationIcon(item.type, colors);
               return (
                 <TouchableOpacity
                   key={item.id}
@@ -392,15 +280,15 @@ export default function NotificationsScreen() {
                     styles.card,
                     { backgroundColor: item.isRead ? colors.cardBg : 'rgba(37,99,235,0.11)', borderColor: Brand.blueBorder }
                   ]}
-                  onPress={() => handleToggleRead(item.id)}
+                  onPress={() => item.meta?.matchId ? handleViewMatch(item) : handleToggleRead(item.id)}
                   activeOpacity={0.85}
                 >
                   {/* Unread Indicator Dot */}
-                  {!item.isRead ? <View style={styles.unreadDot} /> : null}
+                  {!item.isRead && <View style={[styles.unreadDot, { backgroundColor: colors.successText }]} />}
 
                   <View style={styles.cardHeaderRow}>
-                    <View style={[styles.iconBox, { backgroundColor: iconStyle.bg }]}>
-                      <MaterialCommunityIcons name={iconStyle.name} size={22} color={iconStyle.color} />
+                    <View style={[styles.iconBox, { backgroundColor: iconConfig.bg }]}>
+                      <MaterialCommunityIcons name={iconConfig.name} size={22} color={iconConfig.color} />
                     </View>
                     <View style={styles.headerTextWrap}>
                       <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.title}</Text>
@@ -412,14 +300,14 @@ export default function NotificationsScreen() {
 
                   {/* Action Buttons based on notification type */}
                   <View style={styles.actionRow}>
-                    {(item.type === 'BROKER_UNLOCK' || item.type === 'BROKER_REQUEST') && !item.isContactUnlocked && (item.requiresTokenUnlock || !item.meta?.brokerPhone) ? (
+                    {(item.type === 'BROKER_UNLOCK' || item.type === 'BROKER_REQUEST') && item.actionStatus === 'pending' && item.meta?.matchId ? (
                       <TouchableOpacity
                         style={styles.actionButton}
                         activeOpacity={0.85}
-                        onPress={() => navigation.navigate('Matches' as any)}
+                        onPress={() => handleViewMatch(item)}
                       >
                         <LinearGradient
-                          colors={['#10B981', '#059669']}
+                          colors={[colors.successText, colors.successText]}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 0 }}
                           style={styles.actionBtnGrad}
@@ -428,21 +316,11 @@ export default function NotificationsScreen() {
                           <Text style={styles.actionBtnText}>View & Accept in Matches</Text>
                         </LinearGradient>
                       </TouchableOpacity>
-                    ) : (item.type === 'BROKER_UNLOCK' || item.type === 'BROKER_REQUEST') && Boolean(item.meta?.brokerPhone) ? (
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        activeOpacity={0.8}
-                        onPress={() => handleCallBroker(item.meta?.brokerPhone, item.meta?.brokerName)}
-                      >
-                        <LinearGradient
-                          colors={[Brand.blue, Brand.teal]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
-                          style={styles.actionBtnGrad}
-                        >
-                          <MaterialCommunityIcons name="phone-outline" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-                          <Text style={styles.actionBtnText}>Call Broker</Text>
-                        </LinearGradient>
+                    ) : null}
+
+                    {(item.type === 'BROKER_ACCEPTED' || item.type === 'BROKER_REJECTED') && item.meta?.matchId ? (
+                      <TouchableOpacity style={styles.dismissBtn} onPress={() => handleViewMatch(item)}>
+                        <Text style={[styles.dismissText, { color: item.type === 'BROKER_ACCEPTED' ? Brand.teal : colors.errorText }]}>View Match</Text>
                       </TouchableOpacity>
                     ) : null}
 
@@ -450,7 +328,7 @@ export default function NotificationsScreen() {
                       <TouchableOpacity
                         style={styles.actionButton}
                         activeOpacity={0.8}
-                        onPress={handleViewMatch}
+                        onPress={() => handleViewMatch(item)}
                       >
                         <LinearGradient
                           colors={[Brand.blue, Brand.teal]}
@@ -567,7 +445,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#10B981',
   },
   cardHeaderRow: {
     flexDirection: 'row',

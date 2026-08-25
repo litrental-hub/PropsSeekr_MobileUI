@@ -136,6 +136,7 @@ export default function PinSetupScreen() {
                 {row.map(num => (
                   <TouchableOpacity 
                     key={num} 
+                    testID={`pin-key-${num}`}
                     style={[styles.numBtn, { backgroundColor: colors.cardBg }]} 
                     onPress={() => handleKeyPress(num)}
                     activeOpacity={0.7}

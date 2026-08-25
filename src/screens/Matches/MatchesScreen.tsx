@@ -6,26 +6,32 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
   StatusBar,
   RefreshControl,
-  Alert,
+  Linking,
+  ScrollView,
+  Image,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useRoute, RouteProp } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useTranslation } from 'react-i18next';
 
-import { RootStackParamList } from '../../navigation/RootNavigator';
+import { BottomTabParamList } from '../../navigation/BottomTabNavigator';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
-import { FontSize, FontWeight } from '../../constants/theme';
-import { getMatches, confirmMatch, revealMatch, MatchDTO } from '../../api/matches';
-import apiClient from '../../api/client';
+import { FontSize, FontWeight, Card, Shadow, Spacing } from '../../constants/theme';
+import { getMatches, confirmMatch, rejectMatch, MatchDTO, RejectReasonCode } from '../../api/matches';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
 import { formatPrice } from '../../utils/formatters';
+import { resolveMatchSourceIds } from '../../utils/matchFilters';
 import { LogoLoader } from '../../components/common/LogoLoader';
+import { refreshWallet } from '../../services/walletSync';
 
 // ── Types ─────────────────────────────────────────────────────
 interface MatchProperty {
@@ -65,6 +71,11 @@ interface Match {
   windowExpiresAt: string | null;   // ISO timestamp for countdown
   isRevealed: boolean;              // true when reveals row exists in DB
   unlockedContact: { ownerName: string; ownerMobile: string; ownerEmail: string | null } | null;
+  connectionRequestId: number | null;
+  connectionRequestStatus: string | null;
+  deliveryChannel: string | null;
+  incomingConnectionRequest: boolean;
+  currentBrokerRole: string;
   // ── Display fields ──
   matchQuality: string;
   scorePercent: number;
@@ -78,10 +89,21 @@ interface Pagination {
   pageSize: number;
   totalMatches: number;
   totalPages: number;
+  excellentMatches: number;
+  goodMatches: number;
+  fairMatches: number;
+  unlockedMatches: number;
 }
 
 // ── Constants ─────────────────────────────────────────────────
-const UNLOCK_COST_RS = 300;
+const REJECTION_REASONS: Array<{ code: RejectReasonCode; label: string }> = [
+  { code: 'PROPERTY_UNAVAILABLE', label: 'Property is unavailable' },
+  { code: 'PRICE_CHANGED', label: 'Price or budget changed' },
+  { code: 'CLIENT_REQUIREMENT_CLOSED', label: 'Client requirement is closed' },
+  { code: 'ALREADY_CLOSED', label: 'Deal already closed' },
+  { code: 'INCORRECT_MATCH', label: 'Incorrect match' },
+  { code: 'OTHER', label: 'Other' },
+];
 
 // ── API Mappers ───────────────────────────────────────────────
 const parseNumberSafe = (val: any): number => {
@@ -152,6 +174,11 @@ function mapDTOToMatch(dto: MatchDTO, defaultTxType?: string): Match {
     windowExpiresAt,
     isRevealed: revealed,
     unlockedContact: contact,
+    connectionRequestId: raw.connectionRequestId ?? null,
+    connectionRequestStatus: raw.connectionRequestStatus ?? null,
+    deliveryChannel: raw.deliveryChannel ?? null,
+    incomingConnectionRequest: raw.incomingConnectionRequest === true,
+    currentBrokerRole: raw.currentBrokerRole || '',
     matchQuality,
     scorePercent: score,
     property: {
@@ -183,44 +210,25 @@ function mapDTOToMatch(dto: MatchDTO, defaultTxType?: string): Match {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
-function getScoreColor(score: number): string {
-  if (score >= 80) return '#10B981';
-  if (score >= 60) return '#F59E0B';
-  return '#3B82F6';
+function getScoreColor(score: number, colors: any): string {
+  if (score >= 80) return colors.successText;
+  if (score >= 60) return colors.warningText;
+  return colors.infoText;
 }
 
-function getQualityGradient(quality: string): [string, string] {
-  if (quality.includes('Excellent')) return ['#10B981', '#059669'];
-  if (quality.includes('Good')) return ['#F59E0B', '#D97706'];
-  return ['#3B82F6', '#2563EB'];
-}
-
-function initials(name: string): string {
-  return name
-    .split(' ')
-    .map(w => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
-
-/** Masks all but first 2 digits of a phone number */
-function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 4) return '••••••••••';
-  return digits.slice(0, 2) + ' ' + '•'.repeat(Math.min(8, digits.length - 2));
+function getQualityGradient(quality: string, colors: any): [string, string] {
+  if (quality.includes('Excellent')) return [colors.successText, colors.successText];
+  if (quality.includes('Good')) return [colors.warningText, colors.warningText];
+  return [colors.infoText, colors.infoText];
 }
 
 // ── Main Screen ───────────────────────────────────────────────
-type Nav = NativeStackNavigationProp<RootStackParamList>;
-
 export default function MatchesScreen() {
-  const navigation = useNavigation<Nav>();
   const theme = useAppTheme();
   const { colors, type, isDark } = theme;
   const { t } = useTranslation();
 
-  const { sectionType, setCreditsBalance } = useAppStore();
+  const { sectionType } = useAppStore();
   const transactionType = sectionType === 'Rentals' ? 'RENTAL' : 'BUY_SELL';
 
   const [matches, setMatches] = useState<Match[]>([]);
@@ -231,6 +239,23 @@ export default function MatchesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [revealingMatchId, setRevealingMatchId] = useState<number | null>(null);
+  const [actionMatch, setActionMatch] = useState<Match | null>(null);
+  const [actionMode, setActionMode] = useState<'request' | 'accept' | 'reject' | 'result' | null>(null);
+  const [availabilityConfirmed, setAvailabilityConfirmed] = useState(true);
+  const [priceValid, setPriceValid] = useState(true);
+  const [priceNegotiable, setPriceNegotiable] = useState(false);
+  const [readyToConnect, setReadyToConnect] = useState(true);
+  const [rejectReason, setRejectReason] = useState<RejectReasonCode>('PROPERTY_UNAVAILABLE');
+  const [rejectDetails, setRejectDetails] = useState('');
+  const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [actionMessage, setActionMessage] = useState('');
+  const [actionResultSuccess, setActionResultSuccess] = useState(true);
+
+  type MatchesScreenRouteProp = RouteProp<BottomTabParamList, 'Matches'>;
+  const route = useRoute<MatchesScreenRouteProp>();
+  const selectedProperty = route.params?.selectedProperty || route.params?.property;
+  const targetMatchId = route.params?.matchId;
+  const [activeTab, setActiveTab] = useState<'All Matches' | 'Excellent' | 'Good' | 'Fair' | 'Unlocked'>('All Matches');
 
   const { user } = useAuthStore();
   const userId = user?.id || '';
@@ -250,7 +275,16 @@ export default function MatchesScreen() {
       setLoadingMore(true);
     }
     try {
-      const data = await getMatches(userId, pageNum, 20, transactionType);
+      const { listingId: selectedListingId, requirementId: selectedRequirementId } =
+        resolveMatchSourceIds(selectedProperty);
+      const data = await getMatches(
+        pageNum,
+        20,
+        targetMatchId ? undefined : transactionType,
+        selectedListingId,
+        targetMatchId,
+        selectedRequirementId,
+      );
       if (!isMounted.current) return;
       const mappedMatches = data.matches.map(m => mapDTOToMatch(m, transactionType));
       if (reset) {
@@ -271,7 +305,7 @@ export default function MatchesScreen() {
       setLoadingMore(false);
       setRefreshing(false);
     }
-  }, [userId, transactionType]);
+  }, [userId, transactionType, selectedProperty, targetMatchId]);
 
   useEffect(() => { loadPage(1, true); }, [loadPage]);
 
@@ -289,152 +323,124 @@ export default function MatchesScreen() {
     loadPage(page + 1, false);
   }, [loadingMore, loading, pagination, page, loadPage]);
 
-  // ── Reveal handler — fetches contacts after both confirm ────
-  const handleReveal = useCallback(async (match: Match) => {
-    if (!brokerId) return;
-    setRevealingMatchId(match.matchId);
-    try {
-      const res = await revealMatch(match.matchId, {
-        matchId: match.matchId,
-        brokerId: Number(brokerId),
+  const openConnectionAction = useCallback((match: Match, mode: 'request' | 'accept' | 'reject') => {
+    if (!brokerId || !match.matchId) {
+      Alert.alert('Error', 'Invalid match or broker ID.');
+      return;
+    }
+    setActionMatch(match);
+    setActionMode(mode);
+    setAvailabilityConfirmed(true);
+    setPriceValid(true);
+    setPriceNegotiable(false);
+    setReadyToConnect(true);
+    setRejectReason(match.currentBrokerRole === 'requirement' ? 'CLIENT_REQUIREMENT_CLOSED' : 'PROPERTY_UNAVAILABLE');
+    setRejectDetails('');
+    setActionMessage('');
+    setActionResultSuccess(true);
+  }, [brokerId]);
+
+  const applyConfirmedMatch = useCallback((match: Match, res: Awaited<ReturnType<typeof confirmMatch>>) => {
+    const contact = res.unlockedContact || null;
+    setMatches(prev => prev.map(item => item.matchId === match.matchId ? {
+      ...item,
+      state: res.state || item.state,
+      currentBrokerConfirmed: true,
+      windowExpiresAt: res.windowExpiresAt || null,
+      connectionRequestId: res.connectionRequestId ?? item.connectionRequestId,
+      connectionRequestStatus: res.connectionRequestStatus ?? item.connectionRequestStatus,
+      deliveryChannel: res.deliveryChannel ?? item.deliveryChannel,
+      incomingConnectionRequest: false,
+      isRevealed: res.isRevealed === true || item.isRevealed,
+      unlockedContact: contact || item.unlockedContact,
+      property: contact ? { ...item.property, brokerName: contact.ownerName, brokerPhone: contact.ownerMobile } : item.property,
+      buyer: contact ? { ...item.buyer, brokerName: contact.ownerName, brokerPhone: contact.ownerMobile } : item.buyer,
+    } : item));
+    if (brokerId && (res.isRevealed === true || res.creditsRemaining !== undefined)) {
+      // A connection action can deduct a token; always re-read the authoritative wallet.
+      refreshWallet(brokerId, { showLoading: false }).catch(error => {
+        console.warn('Could not refresh wallet after match confirmation.', error?.message);
       });
+    }
+  }, [brokerId]);
 
-      if (res.success && res.unlockedContact) {
-        // Update the match card with real contact + mark revealed
-        setMatches(prev => prev.map(m =>
-          m.matchId === match.matchId
-            ? {
-                ...m,
-                isRevealed: true,
-                unlockedContact: res.unlockedContact,
-                state: 'confirmed',
-                property: { ...m.property, brokerName: res.unlockedContact!.ownerName, brokerPhone: res.unlockedContact!.ownerMobile },
-                buyer:    { ...m.buyer,    brokerName: res.unlockedContact!.ownerName, brokerPhone: res.unlockedContact!.ownerMobile },
-              }
-            : m
-        ));
-        // Update global token balance
-        if (res.creditsRemaining !== undefined) {
-          setCreditsBalance(res.creditsRemaining);
-        }
-      } else {
-        const msg = res.message || '';
-        if (msg.toLowerCase().includes('credit')) {
-          Alert.alert(
-            '💳 Insufficient Tokens',
-            'You need at least 1 token to reveal contact details. Buy more tokens?',
-            [
-              { text: 'Not Now', style: 'cancel' },
-              { text: 'Buy Tokens', onPress: () => navigation.navigate('MainTabs' as any, { screen: 'Tokens' } as any) },
-            ]
-          );
-        } else {
-          Alert.alert('Reveal Failed', msg || 'Could not reveal contact. Please try again.');
-        }
+  const submitConfirmation = useCallback(async () => {
+    if (!actionMatch || actionSubmitting) return;
+    if (!availabilityConfirmed || !priceValid || !readyToConnect) {
+      setActionMessage('Confirm availability, price/budget validity, and readiness to connect.');
+      return;
+    }
+    setActionSubmitting(true);
+    setActionMessage('');
+    try {
+      const res = await confirmMatch(actionMatch.matchId, {
+        matchId: actionMatch.matchId,
+        availabilityConfirmed,
+        priceValid,
+        priceNegotiable,
+        readyToConnect,
+      });
+      if (res.success) applyConfirmedMatch(actionMatch, res);
+      else {
+        setMatches(prev => prev.map(item => item.matchId === actionMatch.matchId ? {
+          ...item,
+          state: res.state || item.state,
+          connectionRequestStatus: res.connectionRequestStatus ?? item.connectionRequestStatus,
+        } : item));
       }
+      setActionResultSuccess(res.success);
+      setActionMatch(current => current ? {
+        ...current,
+        deliveryChannel: res.deliveryChannel ?? current.deliveryChannel,
+        connectionRequestId: res.connectionRequestId ?? current.connectionRequestId,
+        connectionRequestStatus: res.connectionRequestStatus ?? current.connectionRequestStatus,
+      } : current);
+      setActionMessage(res.message || (res.isRevealed ? 'Connection accepted and contacts unlocked.' : 'Request sent.'));
+      setActionMode('result');
     } catch (err: any) {
-      const errMsg = err?.response?.data?.message || err?.message || 'Failed to reveal contact.';
-      Alert.alert('Error', errMsg);
+      setActionMessage(err?.response?.data?.message || err?.message || 'Could not process this connection request.');
+      setActionResultSuccess(false);
     } finally {
-      setRevealingMatchId(null);
+      setActionSubmitting(false);
     }
-  }, [brokerId, navigation, setCreditsBalance]);
+  }, [actionMatch, actionSubmitting, availabilityConfirmed, priceValid, priceNegotiable, readyToConnect, applyConfirmedMatch]);
 
-  // ── Unlock handler — Broker A taps "Unlock" on a matched card ─
-  const handleUnlock = useCallback((match: Match) => {
-    if (!brokerId || !match.matchId) {
-      Alert.alert('Error', 'Invalid match or broker ID.');
+  const submitRejection = useCallback(async () => {
+    if (!actionMatch || actionSubmitting) return;
+    if (rejectReason === 'OTHER' && !rejectDetails.trim()) {
+      setActionMessage('Please add a rejection reason.');
       return;
     }
-    Alert.alert(
-      '🔓 Unlock Contact',
-      'Sending an unlock request to the other broker.\n1 token will be deducted from each party once both confirm.\n\nProceed?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Unlock',
-          onPress: async () => {
-            try {
-              const res = await confirmMatch(match.matchId, {
-                matchId: match.matchId,
-                brokerId: Number(brokerId),
-                availabilityConfirmed: true,
-                priceValid: true,
-                priceNegotiable: false,
-                readyToConnect: true,
-              });
-
-              if (res.state === 'confirmed') {
-                // Edge case: other broker already confirmed — go straight to reveal
-                setMatches(prev => prev.map(m =>
-                  m.matchId === match.matchId ? { ...m, state: 'confirmed', currentBrokerConfirmed: true } : m
-                ));
-                await handleReveal({ ...match, state: 'confirmed', currentBrokerConfirmed: true });
-              } else {
-                // Normal case: waiting for other broker
-                setMatches(prev => prev.map(m =>
-                  m.matchId === match.matchId
-                    ? { ...m, state: 'pending_confirmation', currentBrokerConfirmed: true, windowExpiresAt: res.windowExpiresAt || null }
-                    : m
-                ));
-                Alert.alert('⌛ Request Sent', res.message || 'Unlock request sent. Waiting for the other broker to accept.');
-              }
-            } catch (err: any) {
-              const errMsg = err?.response?.data?.message || err?.message || 'Could not send unlock request.';
-              Alert.alert('Error', errMsg);
-            }
-          },
-        },
-      ]
-    );
-  }, [brokerId, handleReveal]);
-
-  // ── Accept handler — Broker B taps "Accept & Unlock" ─────────
-  const handleAccept = useCallback((match: Match) => {
-    if (!brokerId || !match.matchId) {
-      Alert.alert('Error', 'Invalid match or broker ID.');
-      return;
+    setActionSubmitting(true);
+    setActionMessage('');
+    try {
+      const res = await rejectMatch(actionMatch.matchId, {
+        matchId: actionMatch.matchId,
+        connectionRequestId: actionMatch.connectionRequestId,
+        reasonCode: rejectReason,
+        reasonText: rejectDetails.trim() || undefined,
+      });
+      setMatches(prev => prev.map(item => item.matchId === actionMatch.matchId ? {
+        ...item,
+        state: 'matched',
+        currentBrokerConfirmed: false,
+        incomingConnectionRequest: false,
+        connectionRequestStatus: res.connectionRequestStatus,
+      } : item));
+      setActionMessage(res.message);
+      setActionResultSuccess(true);
+      setActionMode('result');
+    } catch (err: any) {
+      setActionMessage(err?.response?.data?.message || err?.message || 'Could not reject this request.');
+      setActionResultSuccess(false);
+    } finally {
+      setActionSubmitting(false);
     }
-    Alert.alert(
-      '🤝 Accept & Unlock',
-      'Accepting will reveal each other\'s contact details.\n1 token will be deducted from each broker.\n\nConfirm?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Accept & Unlock',
-          onPress: async () => {
-            try {
-              const res = await confirmMatch(match.matchId, {
-                matchId: match.matchId,
-                brokerId: Number(brokerId),
-                availabilityConfirmed: true,
-                priceValid: true,
-                priceNegotiable: false,
-                readyToConnect: true,
-              });
+  }, [actionMatch, actionSubmitting, rejectReason, rejectDetails]);
 
-              if (res.state === 'confirmed') {
-                setMatches(prev => prev.map(m =>
-                  m.matchId === match.matchId ? { ...m, state: 'confirmed', currentBrokerConfirmed: true } : m
-                ));
-                // Both confirmed — trigger reveal
-                await handleReveal({ ...match, state: 'confirmed', currentBrokerConfirmed: true });
-              } else {
-                setMatches(prev => prev.map(m =>
-                  m.matchId === match.matchId
-                    ? { ...m, state: 'pending_confirmation', currentBrokerConfirmed: true, windowExpiresAt: res.windowExpiresAt || null }
-                    : m
-                ));
-              }
-            } catch (err: any) {
-              const errMsg = err?.response?.data?.message || err?.message || 'Could not accept unlock request.';
-              Alert.alert('Error', errMsg);
-            }
-          },
-        },
-      ]
-    );
-  }, [brokerId, handleReveal]);
+  const handleUnlock = useCallback((match: Match) => openConnectionAction(match, 'request'), [openConnectionAction]);
+  const handleAccept = useCallback((match: Match) => openConnectionAction(match, 'accept'), [openConnectionAction]);
+  const handleReject = useCallback((match: Match) => openConnectionAction(match, 'reject'), [openConnectionAction]);
 
   // ── More Details handler ─────────────────────────────────────
   const handleMoreDetails = useCallback((_match: Match) => {
@@ -541,6 +547,116 @@ export default function MatchesScreen() {
     );
   }
 
+  const excellentCount = pagination?.excellentMatches ?? matches.filter(m => m.scorePercent >= 80).length;
+  const goodCount = pagination?.goodMatches ?? matches.filter(m => m.scorePercent >= 60 && m.scorePercent < 80).length;
+  const fairCount = pagination?.fairMatches ?? matches.filter(m => m.scorePercent < 60).length;
+  const unlockedCount = pagination?.unlockedMatches ?? matches.filter(m => m.isRevealed).length;
+
+  const filteredMatches = matches.filter(match => {
+    if (activeTab === 'Excellent') return match.scorePercent >= 80;
+    if (activeTab === 'Good') return match.scorePercent >= 60 && match.scorePercent < 80;
+    if (activeTab === 'Fair') return match.scorePercent < 60;
+    if (activeTab === 'Unlocked') return match.isRevealed;
+    return true;
+  });
+
+  const renderListHeader = () => {
+    if (!selectedProperty) return null;
+    const DEFAULT_PROPERTY_IMAGE = 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    const propertyImageSource = selectedProperty.imageUrl
+      ? { uri: selectedProperty.imageUrl }
+      : { uri: DEFAULT_PROPERTY_IMAGE };
+    const allCount = pagination?.totalMatches ?? matches.length;
+
+    return (
+      <View style={{ marginBottom: 16 }}>
+        <View style={[styles.propertyCard, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder, marginHorizontal: 16, marginTop: 16 }]}> 
+            <View style={styles.cardInnerLayout}>
+              <View style={styles.cardImageContainer}>
+                <Image source={propertyImageSource} style={styles.cardImage} resizeMode="cover" />
+              </View>
+              <View style={styles.cardDetailsContainer}>
+                <View style={[styles.propertyCardHeader, { marginBottom: 6 }]}>
+                  <View style={styles.tagWrap}>
+                    <Text style={styles.tagText}>{selectedProperty.type || selectedProperty.propertyType || 'RENTAL'}</Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 2 }}>
+                  <Text style={[styles.cardTitle, styles.propertyTitle, { color: colors.textPrimary, flex: 1, marginRight: 8 }]} numberOfLines={2}>
+                    {selectedProperty.title || 'Property Listing'}
+                  </Text>
+                  <Text style={[styles.statusText, { color: colors.successText, marginTop: 2, fontSize: 11 }]}>
+                    ● {selectedProperty.status || 'Active'}
+                  </Text>
+                </View>
+                <View style={[styles.locationRow, { marginBottom: 6 }]}>
+                  <MaterialCommunityIcons name="map-marker-outline" size={14} color={colors.textDim} />
+                  <Text style={[styles.cardLocation, { color: colors.textSecondary, marginBottom: 0 }]} numberOfLines={2}>
+                    {selectedProperty.location || 'Location not specified'}
+                  </Text>
+                </View>
+                <Text style={[styles.cardPrice, styles.propertyPrice, { marginBottom: 8 }]}>{formatPrice(selectedProperty.price)}</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={styles.metaBadge}>
+                    <MaterialCommunityIcons name="home-outline" size={12} color={colors.textDim} />
+                    <Text style={[styles.metaBadgeText, { color: colors.textSecondary }]}>3 BHK</Text>
+                  </View>
+                  <View style={styles.metaBadge}>
+                    <MaterialCommunityIcons name="ruler-square" size={12} color={colors.textDim} />
+                    <Text style={[styles.metaBadgeText, { color: colors.textSecondary }]}>1500 sqft</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+
+        {/* Matches Summary Title */}
+        <View style={{ marginHorizontal: 16, marginTop: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <View>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary }}>All Matches</Text>
+            <Text style={{ fontSize: 12, color: colors.textDim, marginTop: 2 }}>
+              Brokers interested in your property
+            </Text>
+          </View>
+          <View style={[styles.statsCard, { backgroundColor: colors.cardBg }]}>
+            <Text style={{ fontSize: 24, fontWeight: '800', color: colors.successText, lineHeight: 28 }}>{allCount}</Text>
+            <Text style={styles.statsLabel}>{t('matches.totalFound', 'Matches found')}</Text>
+          </View>
+        </View>
+
+        {/* Filter Tabs */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12, marginTop: 16 }}>
+          {[
+            { label: 'All Matches', count: allCount, color: colors.textPrimary },
+            { label: 'Excellent', count: excellentCount, color: colors.successText },
+            { label: 'Good', count: goodCount, color: colors.infoText },
+            { label: 'Fair', count: fairCount, color: colors.warningText },
+            { label: 'Unlocked', count: unlockedCount, color: colors.infoText }
+          ].map(tab => {
+            const isActive = activeTab === tab.label;
+            return (
+              <TouchableOpacity
+                key={tab.label}
+                onPress={() => setActiveTab(tab.label as any)}
+                activeOpacity={0.7}
+                style={[
+                  styles.filterTab,
+                  {
+                    backgroundColor: isActive ? tab.color : colors.cardBg,
+                    borderColor: isActive ? tab.color : colors.borderFaint
+                  }
+                ]}
+              >
+                <Text style={[styles.filterTabLabel, { color: isActive ? '#FFF' : tab.color }]}>{tab.label}</Text>
+                <Text style={[styles.filterTabCount, { color: isActive ? '#FFF' : tab.color, opacity: isActive ? 0.9 : 1 }]}>{tab.count}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: colors.navy }]}>
       <StatusBar
@@ -567,15 +683,17 @@ export default function MatchesScreen() {
         <ScreenHeader colors={colors} type={type} pagination={pagination} />
 
         <FlatList
-          data={matches}
-          keyExtractor={(_, i) => String(i)}
-          renderItem={({ item, index }) => (
+          data={filteredMatches}
+          keyExtractor={item => String(item.matchId)}
+          ListHeaderComponent={renderListHeader}
+          renderItem={({ item }) => (
             <MatchCard
               match={item}
               colors={colors}
               isRevealing={revealingMatchId === item.matchId}
               onUnlock={() => handleUnlock(item)}
               onAccept={() => handleAccept(item)}
+              onReject={() => handleReject(item)}
               onMoreDetails={() => handleMoreDetails(item)}
             />
           )}
@@ -594,23 +712,154 @@ export default function MatchesScreen() {
             />
           }
         />
+
+        <Modal
+          visible={actionMode !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => !actionSubmitting && setActionMode(null)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.actionModal, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+              <View style={styles.modalTitleRow}>
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                  {actionMode === 'request' ? 'Unlock Contact' : actionMode === 'accept' ? 'Accept Request' : actionMode === 'reject' ? 'Reject Request' : 'Request Update'}
+                </Text>
+                <TouchableOpacity
+                  accessibilityLabel="Close"
+                  disabled={actionSubmitting}
+                  onPress={() => setActionMode(null)}
+                  style={styles.modalClose}
+                >
+                  <MaterialCommunityIcons name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              {actionMode === 'result' ? (
+                <>
+                  <View style={[styles.resultIcon, !actionResultSuccess && styles.resultErrorIcon]}>
+                    <MaterialCommunityIcons name={actionResultSuccess ? 'check' : 'alert-outline'} size={28} color="#FFFFFF" />
+                  </View>
+                  <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>{actionMessage}</Text>
+                  {actionMatch?.deliveryChannel === 'whatsapp' && (
+                    <Text style={styles.plannedNotice}>WhatsApp delivery is planned for a later release; no WhatsApp message was sent.</Text>
+                  )}
+                  <TouchableOpacity style={styles.modalPrimaryButton} onPress={() => setActionMode(null)}>
+                    <LinearGradient colors={[Brand.blue, Brand.teal]} style={styles.modalPrimaryGradient}>
+                      <Text style={styles.modalPrimaryText}>Done</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </>
+              ) : actionMode === 'reject' ? (
+                <>
+                  <Text style={[styles.modalDescription, { color: colors.textSecondary }]}>Select a reason. Rejecting does not deduct tokens.</Text>
+                  <ScrollView style={styles.reasonList} showsVerticalScrollIndicator={false}>
+                    {REJECTION_REASONS.map(reason => (
+                      <TouchableOpacity
+                        key={reason.code}
+                        onPress={() => setRejectReason(reason.code)}
+                        style={[styles.optionRow, { borderColor: rejectReason === reason.code ? Brand.teal : Brand.blueBorder }]}
+                      >
+                        <MaterialCommunityIcons
+                          name={rejectReason === reason.code ? 'radiobox-marked' : 'radiobox-blank'}
+                          size={20}
+                          color={rejectReason === reason.code ? Brand.teal : colors.textDim}
+                        />
+                        <Text style={[styles.optionText, { color: colors.textPrimary }]}>{reason.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                  {rejectReason === 'OTHER' && (
+                    <TextInput
+                      value={rejectDetails}
+                      onChangeText={setRejectDetails}
+                      placeholder="Add rejection reason"
+                      placeholderTextColor={colors.textDim}
+                      multiline
+                      maxLength={500}
+                      style={[styles.reasonInput, { color: colors.textPrimary, borderColor: Brand.blueBorder }]}
+                    />
+                  )}
+                  {!!actionMessage && <Text style={styles.validationMessage}>{actionMessage}</Text>}
+                  <TouchableOpacity disabled={actionSubmitting} style={[styles.rejectSubmit, actionSubmitting && styles.disabledButton]} onPress={submitRejection}>
+                    {actionSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.modalPrimaryText}>Reject Request</Text>}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={[styles.modalDescription, { color: colors.textSecondary }]}>
+                    {actionMode === 'accept'
+                      ? 'Confirm the current details before connecting with the other broker.'
+                      : 'Send a connection request. Tokens are charged only after the other broker accepts and contact reveal succeeds.'}
+                  </Text>
+                  {[
+                    { label: actionMatch?.currentBrokerRole === 'requirement' ? 'Client requirement is active' : 'Property is available', value: availabilityConfirmed, set: setAvailabilityConfirmed },
+                    { label: 'Price / budget is still valid', value: priceValid, set: setPriceValid },
+                    { label: 'Ready to connect', value: readyToConnect, set: setReadyToConnect },
+                  ].map(item => (
+                    <TouchableOpacity key={item.label} onPress={() => item.set(!item.value)} style={[styles.checkRow, { borderColor: Brand.blueBorder }]}>
+                      <MaterialCommunityIcons name={item.value ? 'checkbox-marked' : 'checkbox-blank-outline'} size={23} color={item.value ? Brand.teal : colors.textDim} />
+                      <Text style={[styles.optionText, { color: colors.textPrimary }]}>{item.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <View style={[styles.negotiableRow, { borderColor: Brand.blueBorder }]}>
+                    <Text style={[styles.optionText, { color: colors.textPrimary }]}>Property / price negotiable?</Text>
+                    <View style={styles.yesNoWrap}>
+                      {[true, false].map(value => (
+                        <TouchableOpacity key={String(value)} onPress={() => setPriceNegotiable(value)} style={[styles.yesNoButton, priceNegotiable === value && styles.yesNoButtonActive]}>
+                          <Text style={[styles.yesNoText, priceNegotiable === value && styles.yesNoTextActive]}>{value ? 'Yes' : 'No'}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={styles.tokenNotice}>
+                    <MaterialCommunityIcons name="information-outline" size={18} color={Brand.blue} />
+                    <Text style={[styles.tokenNoticeText, { color: colors.textSecondary }]}>1 token from each broker is deducted only when both confirm and contacts are revealed.</Text>
+                  </View>
+                  {!!actionMessage && <Text style={styles.validationMessage}>{actionMessage}</Text>}
+                  <TouchableOpacity disabled={actionSubmitting} style={[styles.modalPrimaryButton, actionSubmitting && styles.disabledButton]} onPress={submitConfirmation}>
+                    <LinearGradient colors={[Brand.blue, Brand.teal]} style={styles.modalPrimaryGradient}>
+                      {actionSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.modalPrimaryText}>{actionMode === 'accept' ? 'Accept & Connect' : 'Send Request'}</Text>}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  {actionMode === 'accept' && (
+                    <TouchableOpacity style={styles.modalRejectLink} onPress={() => { setActionMode('reject'); setActionMessage(''); }}>
+                      <Text style={styles.modalRejectLinkText}>Reject Request</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
 }
 
 // ── Screen Header ─────────────────────────────────────────────
-function ScreenHeader({
-  colors,
-  type,
-  pagination,
-}: {
-  colors: ReturnType<typeof useAppTheme>['colors'];
-  type: 'light' | 'dark';
-  pagination: Pagination | null;
-}) {
+function ScreenHeader({ colors, type, pagination, selectedProperty, navigation }: any) {
   const { t } = useTranslation();
   const { sectionType, setSectionType } = useAppStore();
+
+  if (selectedProperty) {
+    return (
+      <View style={[styles.header, { borderBottomColor: Brand.blueBorder }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <MaterialCommunityIcons name="chevron-left" size={24} color={colors.textPrimary} />
+          <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 }}>Matches</Text>
+        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          {pagination && (
+            <View style={[styles.totalBadge, { backgroundColor: 'rgba(37,99,235,0.15)', borderColor: Brand.blueBorder }]}>
+              <Text style={styles.totalBadgeText}>🤝 {pagination.totalMatches.toLocaleString()} {t('matchesScreen.matchesCount')}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.header, { borderBottomColor: Brand.blueBorder }]}>
       <PropSeekrLogo size={30} theme={type} layout="horizontal" />
@@ -662,286 +911,87 @@ function ScreenHeader({
 }
 
 // ── Match Card ────────────────────────────────────────────────
-function MatchCard({
-  match,
-  colors,
-  isRevealing,
-  onUnlock,
-  onAccept,
-  onMoreDetails,
-}: {
+function MatchCard({ match, colors, isRevealing, onUnlock, onAccept, onReject, onMoreDetails }: {
   match: Match;
   colors: ReturnType<typeof useAppTheme>['colors'];
-  isRevealing: boolean;   // spinner shown while reveal API is in-flight
-  onUnlock: () => void;   // Broker A: tap Unlock
-  onAccept: () => void;   // Broker B: tap Accept & Unlock
+  isRevealing: boolean;
+  onUnlock: () => void;
+  onAccept: () => void;
+  onReject: () => void;
   onMoreDetails: () => void;
 }) {
-  const { t } = useTranslation();
-  const scoreColor = getScoreColor(match.scorePercent);
-  const [g1, g2] = getQualityGradient(match.matchQuality);
+  const scoreColor = getScoreColor(match.scorePercent, colors);
+  const [g1, g2] = getQualityGradient(match.matchQuality, colors);
+  const otherBroker = match.property || match.buyer;
+  const matchTitle = `${match.property.config} ${match.property.type}`.trim();
+  const matchPrice = match.property.price;
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
-
-      {/* ── Card Header: score + quality badge ── */}
-      <View style={styles.cardHeader}>
-        {/* Score ring */}
-        <View style={[styles.scoreRing, { borderColor: scoreColor }]}>
-          <Text style={[styles.scoreText, { color: scoreColor }]}>{match.scorePercent}%</Text>
-          <Text style={[styles.scoreLabel, { color: colors.textDim }]}>{t('matchesScreen.score')}</Text>
-        </View>
-
-        {/* Quality badge + match details pills */}
-        <View style={{ flex: 1, gap: 6 }}>
-          <LinearGradient
-            colors={[g1, g2]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.qualityBadge}
-          >
-            <Text style={styles.qualityText}>{match.matchQuality}</Text>
-          </LinearGradient>
-
-          <View style={styles.pillRow}>
-            {Object.values(match.matchDetails)
-              .filter(Boolean)
-              .map((detail, i) => (
-                <View
-                  key={i}
-                  style={[styles.pill, { backgroundColor: colors.cardBgLight, borderColor: colors.borderFaint }]}
-                >
-                  <Text style={styles.pillDot}>✓</Text>
-                  <Text style={[styles.pillText, { color: colors.textSecondary }]}>{detail}</Text>
-                </View>
-              ))}
+    <View style={[styles.compactMatchCard, { backgroundColor: colors.cardBg, borderColor: colors.borderFaint }]}>
+      <View style={styles.compactMatchHeader}>
+        <LinearGradient colors={[Brand.blue, Brand.teal]} style={styles.compactAvatar}>
+          <Text style={styles.compactAvatarText}>{otherBroker.brokerName.charAt(0)}</Text>
+        </LinearGradient>
+        <View style={styles.compactInfoWrap}>
+          <View style={styles.compactTitleRow}>
+            <Text style={[styles.compactBrokerName, { color: colors.textPrimary }]} numberOfLines={1}>{otherBroker.brokerName}</Text>
+            <LinearGradient colors={[g1, g2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.compactQualityBadge}>
+              <Text style={[styles.compactQualityText, { color: '#FFF' }]}>{match.matchQuality}</Text>
+            </LinearGradient>
           </View>
+          <Text style={[styles.compactDetailsLine, { color: colors.textSecondary }]} numberOfLines={1}>
+            {matchTitle} • {formatPrice(matchPrice)}
+          </Text>
+          <Text style={[styles.compactDateLine, { color: colors.textDim }]}>
+            Matched today • {otherBroker.location}
+          </Text>
+        </View>
+        <View style={[styles.compactScoreRing, { borderColor: scoreColor }]}>
+          <Text style={[styles.compactScoreText, { color: scoreColor }]}>
+            {match.scorePercent}%
+          </Text>
         </View>
       </View>
 
-      {/* ── Divider ── */}
-      <View style={[styles.divider, { backgroundColor: Brand.blueBorder }]} />
-
-      {/* ── Property + Buyer columns ── */}
-      <View style={styles.partyRow}>
-        {/* Property (Seller) */}
-        <View style={styles.partyCol}>
-          <View style={[styles.partyLabelWrap, { backgroundColor: 'rgba(16,185,129,0.12)' }]}>
-            <Text style={[styles.partyLabelText, { color: Brand.teal }]}>🏠 {t('matchesScreen.property')}</Text>
-          </View>
-
-          <View style={styles.partyDetails}>
-            <View style={styles.partyRow2}>
-              <Text style={[styles.partyConfig, { color: colors.textPrimary }]}>
-                {[match.property.config, match.property.type].filter(Boolean).join(' ')}
-              </Text>
-              <View style={[styles.forSaleBadge, { backgroundColor: 'rgba(37,99,235,0.15)' }]}>
-                <Text style={[styles.forSaleText, { color: '#60A5FA' }]}>{match.property.for}</Text>
-              </View>
-            </View>
-
-            <Text style={[styles.partyPrice, { color: colors.textPrimary }]}>
-              {formatPrice(match.property.price)}
-            </Text>
-            {!!match.property.size && (
-              <Text style={[styles.partyStat, { color: colors.textSecondary }]}>
-                📐 {match.property.size}
-              </Text>
-            )}
-            <Text style={[styles.partyStat, { color: colors.textSecondary }]}>
-              📍 {match.property.location}
-            </Text>
-          </View>
-
-          {/* Broker chip */}
-          <BrokerChip
-            name={match.property.brokerName}
-            phone={match.property.brokerPhone}
-            isUnlocked={match.isRevealed}
-            colors={colors}
-          />
-        </View>
-
-        {/* Vertical separator */}
-        <View style={[styles.vertDivider, { backgroundColor: Brand.blueBorder }]} />
-
-        {/* Buyer */}
-        <View style={styles.partyCol}>
-          <View style={[styles.partyLabelWrap, { backgroundColor: 'rgba(37,99,235,0.12)' }]}>
-            <Text style={[styles.partyLabelText, { color: '#60A5FA' }]}>👤 {t('matchesScreen.buyer')}</Text>
-          </View>
-
-          <View style={styles.partyDetails}>
-            <View style={styles.partyRow2}>
-              <Text style={[styles.partyConfig, { color: colors.textPrimary }]}>
-                {match.buyer.type}
-              </Text>
-              <View style={[styles.forSaleBadge, { backgroundColor: 'rgba(16,185,129,0.12)' }]}>
-                <Text style={[styles.forSaleText, { color: Brand.teal }]}>{match.buyer.lookingFor}</Text>
-              </View>
-            </View>
-
-            <Text style={[styles.partyPrice, { color: colors.textPrimary }]}>
-              {formatPrice(match.buyer.budget)}
-            </Text>
-            <Text style={[styles.partyStat, { color: colors.textSecondary }]}>
-              📍 {match.buyer.location}
-            </Text>
-          </View>
-
-          {/* Broker chip */}
-          <BrokerChip
-            name={match.buyer.brokerName}
-            phone={match.buyer.brokerPhone}
-            isUnlocked={match.isRevealed}
-            colors={colors}
-          />
-        </View>
-      </View>
-
-      {/* ── Action Buttons — 6-state machine ── */}
-      <View style={[styles.actionDivider, { backgroundColor: Brand.blueBorder }]} />
-
-      <View style={styles.actionSection}>
-        {/* ── STATE: REVEALED — show contact + call/WhatsApp ── */}
-        {match.isRevealed && match.unlockedContact ? (
-          <View style={[styles.unlockedBanner, { backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)' }]}>
-            <Text style={styles.unlockedBannerEmoji}>✅</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.unlockedBannerTitle, { color: Brand.teal }]}>Contact Unlocked</Text>
-              <Text style={[styles.unlockedBannerSub, { color: colors.textDim }]}>
-                {match.unlockedContact.ownerName} · {match.unlockedContact.ownerMobile}
-              </Text>
-            </View>
-          </View>
-
-        ) : isRevealing ? (
-          /* ── STATE: REVEAL IN FLIGHT — spinner ── */
-          <View style={[styles.unlockBtnWrap, { backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', borderWidth: 1 }]}>
-            <ActivityIndicator size="small" color={Brand.teal} />
-            <Text style={[styles.unlockText, { color: Brand.teal, marginLeft: 8 }]}>Fetching contacts...</Text>
-          </View>
-
-        ) : match.state === 'confirmed' ? (
-          /* ── STATE: CONFIRMED but not yet revealed — auto-reveal ── */
-          <View style={[styles.unlockBtnWrap, { backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)', borderWidth: 1 }]}>
-            <ActivityIndicator size="small" color={Brand.teal} />
-            <Text style={[styles.unlockText, { color: Brand.teal, marginLeft: 8 }]}>Both confirmed — fetching contacts...</Text>
-          </View>
-
-        ) : match.state === 'pending_confirmation' && match.currentBrokerConfirmed ? (
-          /* ── STATE: PENDING — current broker already sent request, waiting ── */
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={[styles.unlockBtnWrap, { borderWidth: 1.5, borderColor: 'rgba(245,158,11,0.4)', backgroundColor: 'rgba(245,158,11,0.12)' }]}
-            onPress={() => Alert.alert('⌛ Waiting', `Unlock request sent. Waiting for the other broker to accept.${match.windowExpiresAt ? `\nExpires: ${new Date(match.windowExpiresAt).toLocaleTimeString()}` : ''}`)}
-          >
-            <View style={styles.pendingBtnRow}>
-              <Text style={styles.unlockIcon}>⌛</Text>
-              <Text style={[styles.unlockText, { color: '#F59E0B' }]}>Waiting for other broker</Text>
-              <View style={[styles.unlockCostBadge, { backgroundColor: 'rgba(245,158,11,0.25)' }]}>
-                <Text style={[styles.unlockCostText, { color: '#F59E0B' }]}>Pending</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-        ) : match.state === 'pending_confirmation' && !match.currentBrokerConfirmed ? (
-          /* ── STATE: PENDING — other broker initiated, this broker must accept ── */
-          <TouchableOpacity
-            onPress={onAccept}
-            activeOpacity={0.85}
-            style={styles.unlockBtnWrap}
-          >
-            <LinearGradient
-              colors={['#10B981', '#059669']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.unlockGrad}
-            >
-              <Text style={styles.unlockIcon}>🤝</Text>
-              <Text style={styles.unlockText}>Accept &amp; Unlock</Text>
-              <View style={styles.unlockCostBadge}>
-                <Text style={styles.unlockCostText}>1 Token</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-
-        ) : (
-          /* ── STATE: MATCHED (default) or EXPIRED — show Unlock button ── */
-          <TouchableOpacity
-            onPress={onUnlock}
-            activeOpacity={0.85}
-            style={styles.unlockBtnWrap}
-          >
-            <LinearGradient
-              colors={[Brand.blue, Brand.teal]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.unlockGrad}
-            >
-              <Text style={styles.unlockIcon}>🔓</Text>
-              <Text style={styles.unlockText}>
-                {match.state === 'expired' ? 'Unlock Again' : 'Unlock Contact'}
-              </Text>
-              <View style={styles.unlockCostBadge}>
-                <Text style={styles.unlockCostText}>1 Token</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-
-        {/* More Details Button */}
-        <TouchableOpacity
-          onPress={onMoreDetails}
-          activeOpacity={0.75}
-          style={[styles.moreDetailsBtn, { borderColor: Brand.blueBorder, backgroundColor: colors.inputBg }]}
-        >
-          <Text style={styles.moreDetailsIcon}>📋</Text>
-          <Text style={[styles.moreDetailsText, { color: colors.textSecondary }]}>{t('matchesScreen.moreDetails')}</Text>
-          <View style={[styles.comingSoonTag, { backgroundColor: 'rgba(245,158,11,0.15)' }]}>
-            <Text style={styles.comingSoonText}>Coming Soon</Text>
-          </View>
+      <View style={styles.compactActionsRow}>
+        <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, borderColor: colors.borderFaint, backgroundColor: colors.cardBgLight }]} onPress={onMoreDetails}>
+          <Text style={[styles.compactActionText, { color: colors.textSecondary }]}>View Details</Text>
         </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
 
-// ── Broker Chip ───────────────────────────────────────────────
-function BrokerChip({
-  name,
-  phone,
-  isUnlocked,
-  colors,
-}: {
-  name: string;
-  phone: string;
-  isUnlocked: boolean;
-  colors: ReturnType<typeof useAppTheme>['colors'];
-}) {
-  return (
-    <View style={[styles.brokerChip, { backgroundColor: colors.inputBg, borderColor: Brand.blueBorder }]}>
-      <LinearGradient
-        colors={[Brand.blue, Brand.teal]}
-        style={styles.brokerAvatar}
-      >
-        <Text style={styles.brokerInitials}>{initials(name)}</Text>
-      </LinearGradient>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.brokerName, { color: colors.textPrimary }]} numberOfLines={1}>
-          {name}
-        </Text>
-        {isUnlocked ? (
-          <Text style={[styles.brokerPhone, { color: colors.textDim }]}>{phone}</Text>
-        ) : (
-          <View style={styles.maskedPhoneRow}>
-            <Text style={[styles.brokerPhone, { color: colors.textDim }]}>
-              {maskPhone(phone)}
-            </Text>
-            <View style={[styles.lockBadge, { backgroundColor: 'rgba(37,99,235,0.15)' }]}>
-              <Text style={styles.lockIcon}>🔒</Text>
-            </View>
+        {match.isRevealed && match.unlockedContact ? (
+          <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', flexDirection: 'row', gap: 6 }]} onPress={() => Linking.openURL(`tel:${match.unlockedContact?.ownerMobile}`)}>
+            <MaterialCommunityIcons name="phone" size={14} color={Brand.teal} />
+            <Text style={[styles.compactActionText, { color: Brand.teal }]}>Call Broker</Text>
+          </TouchableOpacity>
+        ) : isRevealing ? (
+          <View style={[styles.compactActionBtn, { flex: 1, backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }]}>
+            <ActivityIndicator size="small" color={Brand.teal} />
           </View>
+        ) : match.connectionRequestStatus === 'credit_required' ? (
+          <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, backgroundColor: colors.warningFaint, borderColor: colors.warningText }]} onPress={onUnlock}>
+            <Text style={[styles.compactActionText, { color: colors.warningText }]}>Retry Connection</Text>
+          </TouchableOpacity>
+        ) : match.state === 'confirmed' ? (
+          <View style={[styles.compactActionBtn, { flex: 1, backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }]}>
+            <ActivityIndicator size="small" color={Brand.teal} />
+          </View>
+        ) : match.state === 'pending_confirmation' && match.currentBrokerConfirmed ? (
+          <View style={[styles.compactActionBtn, { flex: 1, borderColor: colors.borderFaint }]}>
+            <Text style={[styles.compactActionText, { color: colors.warningText }]}>Pending</Text>
+          </View>
+        ) : match.incomingConnectionRequest || (match.state === 'pending_confirmation' && !match.currentBrokerConfirmed) ? (
+          <View style={styles.incomingActionWrap}>
+            <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, borderColor: colors.errorText }]} onPress={onReject}>
+              <Text style={[styles.compactActionText, { color: colors.errorText }]}>Reject</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, backgroundColor: Brand.teal, borderColor: Brand.teal }]} onPress={onAccept}>
+              <Text style={[styles.compactActionText, { color: '#FFF' }]}>Accept</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, backgroundColor: Brand.teal, borderColor: Brand.teal }]} onPress={onUnlock}>
+            <Text style={[styles.compactActionText, { color: '#FFF' }]}>Unlock Contact</Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -1002,17 +1052,15 @@ const styles = StyleSheet.create({
 
   // ── List
   listContent: {
-    paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 100,
-    gap: 12,
   },
 
   // ── Card
   card: {
-    borderRadius: 18,
+    borderRadius: Card.radius,   // 16dp — standardised token
     borderWidth: 1.5,
-    padding: 14,
+    padding: Card.padding,       // 16dp
   },
 
   // Card Header
@@ -1328,4 +1376,78 @@ const styles = StyleSheet.create({
   retryBtn: { borderRadius: 12, overflow: 'hidden', marginTop: 8 },
   retryGrad: { paddingHorizontal: 28, paddingVertical: 12 },
   retryText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: '#FFFFFF' },
+
+  propertyCard: { borderRadius: 16, borderWidth: 1, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  cardInnerLayout: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardImageContainer: { width: '32%', aspectRatio: 0.85 },
+  cardImage: { width: '100%', height: '100%', borderRadius: 12, backgroundColor: '#E5E7EB' },
+  cardDetailsContainer: { flex: 1, justifyContent: 'flex-start' },
+  propertyCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  tagWrap: { backgroundColor: 'rgba(37,99,235,0.12)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  tagText: { color: '#60A5FA', fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  matchesCtaTouchTarget: { minWidth: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  matchesCta: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, gap: 4 },
+  matchesCtaText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
+  cardTitle: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  propertyTitle: { lineHeight: 20 },
+  statusText: { fontWeight: '700' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  cardLocation: { fontSize: 12 },
+  cardPrice: { fontSize: 18, fontWeight: '800', color: Brand.blue },
+  propertyPrice: { marginTop: -2 },
+  metaBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: '#F3F4F6' },
+  metaBadgeText: { fontSize: 10, fontWeight: '600' },
+
+  filterTab: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  filterTabLabel: { fontSize: 12, fontWeight: '700' },
+  filterTabCount: { fontSize: 10, fontWeight: '800', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 4, borderRadius: 10 },
+
+  compactMatchCard: { marginHorizontal: 16, marginBottom: 12, borderRadius: 12, borderWidth: 1, padding: 14 },
+  compactMatchHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  compactAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  compactAvatarText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+  compactInfoWrap: { flex: 1 },
+  compactTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  compactBrokerName: { fontSize: 14, fontWeight: '800', flexShrink: 1 },
+  compactQualityBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  compactQualityText: { fontSize: 9, fontWeight: '800' },
+  compactDetailsLine: { fontSize: 11, marginTop: 2 },
+  compactDateLine: { fontSize: 10, marginTop: 4 },
+  compactScoreRing: { width: 44, height: 44, borderRadius: 22, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
+  compactScoreText: { fontSize: 12, fontWeight: '800' },
+  compactActionsRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  incomingActionWrap: { flex: 1.5, flexDirection: 'row', gap: 6 },
+  compactActionBtn: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  compactActionText: { fontSize: 12, fontWeight: '700' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(2,6,23,0.68)', justifyContent: 'center', padding: 20 },
+  actionModal: { borderWidth: 1, borderRadius: 20, padding: 20, maxHeight: '88%', shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 10 },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  modalTitle: { fontSize: 20, fontWeight: '800' },
+  modalClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -10, marginTop: -10 },
+  modalDescription: { fontSize: 13, lineHeight: 19, marginBottom: 14 },
+  checkRow: { minHeight: 50, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, marginBottom: 9, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  optionRow: { minHeight: 46, borderWidth: 1, borderRadius: 11, paddingHorizontal: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  optionText: { flex: 1, fontSize: 13, fontWeight: '600' },
+  negotiableRow: { minHeight: 54, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  yesNoWrap: { flexDirection: 'row', backgroundColor: 'rgba(148,163,184,0.14)', borderRadius: 9, padding: 2 },
+  yesNoButton: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 7 },
+  yesNoButtonActive: { backgroundColor: Brand.teal },
+  yesNoText: { color: '#64748B', fontSize: 12, fontWeight: '700' },
+  yesNoTextActive: { color: '#FFFFFF' },
+  tokenNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: 'rgba(37,99,235,0.08)', borderRadius: 11, padding: 11, marginBottom: 12 },
+  tokenNoticeText: { flex: 1, fontSize: 11, lineHeight: 16 },
+  modalPrimaryButton: { minHeight: 50, borderRadius: 13, overflow: 'hidden' },
+  modalPrimaryGradient: { minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  modalPrimaryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+  modalRejectLink: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 7 },
+  modalRejectLinkText: { color: '#EF4444', fontSize: 13, fontWeight: '700' },
+  reasonList: { maxHeight: 280, marginBottom: 4 },
+  reasonInput: { minHeight: 82, borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 13, textAlignVertical: 'top', marginBottom: 10 },
+  rejectSubmit: { minHeight: 50, borderRadius: 13, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' },
+  validationMessage: { color: '#EF4444', fontSize: 12, lineHeight: 17, marginBottom: 10 },
+  disabledButton: { opacity: 0.6 },
+  resultIcon: { width: 54, height: 54, borderRadius: 27, backgroundColor: Brand.teal, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginVertical: 12 },
+  resultErrorIcon: { backgroundColor: '#EF4444' },
+  modalMessage: { textAlign: 'center', fontSize: 14, lineHeight: 21, marginBottom: 16 },
+  plannedNotice: { color: '#B45309', backgroundColor: 'rgba(245,158,11,0.12)', borderRadius: 10, padding: 10, fontSize: 11, lineHeight: 16, marginBottom: 14 },
 });
