@@ -1,5 +1,4 @@
 import apiClient from './client';
-import axios from 'axios';
 
 export interface LocationPayload {
   city: string;
@@ -137,16 +136,17 @@ export const uploadBulkTxtFile = async (fileUri: string, fileName: string): Prom
     throw new Error('Invalid file type. Only .txt (plain text) files are allowed.');
   }
 
-  // 2. Request presigned upload URL from AWS API Gateway
-  const initRes = await axios.post(
-    'https://73t761f5q5.execute-api.ap-south-1.amazonaws.com/default/propseekr-file-processor/upload',
-    { fileName: fileName },
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  // 2. Request a presigned URL from MobileAPI. The response also includes the
+  // exact S3 bucket/key needed to start processing after the PUT succeeds.
+  const initRes = await apiClient.post('/file-processor/upload', { fileName });
 
   const uploadUrl = initRes.data?.uploadUrl || initRes.data?.url || (typeof initRes.data === 'string' ? initRes.data : null);
+  const key = initRes.data?.key;
   if (!uploadUrl || typeof uploadUrl !== 'string') {
     throw new Error('Failed to retrieve a valid presigned upload URL from the server.');
+  }
+  if (!key) {
+    throw new Error('The upload response did not include the file processing reference.');
   }
 
   // 3. Read local file text content
@@ -166,7 +166,16 @@ export const uploadBulkTxtFile = async (fileUri: string, fileName: string): Prom
     throw new Error(`S3 upload failed with status ${uploadResponse.status}`);
   }
 
-  return uploadUrl;
+  // 5. Explicit completion callback. This replaces the former S3 -> Lambda
+  // trigger and starts process -> ingest -> embeddings -> matching only after
+  // S3 has confirmed that the file is fully uploaded.
+  await apiClient.post(
+    '/file-processor/pipeline',
+    { key },
+    { timeout: 10 * 60 * 1000 },
+  );
+
+  return key;
 };
 
 // ── Additional Listing Endpoints (Entire Flow) ───────────────────

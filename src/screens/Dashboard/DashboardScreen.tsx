@@ -486,9 +486,9 @@ export default function DashboardScreen() {
                       return;
                     }
 
-                    Alert.alert('Uploading', `Uploading ${fileName}... Please wait.`);
+                    Alert.alert('Uploading', `Uploading and processing ${fileName}... Please wait.`);
                     await uploadBulkTxtFile(pickerResult.uri, fileName);
-                    Alert.alert('Upload Successful 🎉', 'Your bulk file has been uploaded to AWS S3 successfully and scheduled for processing!');
+                    Alert.alert('Processing Completed 🎉', 'Your bulk file was uploaded and processing has completed.');
                   } catch (err: any) {
                     if (isErrorWithCode(err) && err.code === errorCodes.OPERATION_CANCELED) {
                       // User cancelled file selection
