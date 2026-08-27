@@ -25,24 +25,9 @@ export const register = async (data: RegisterPayload): Promise<RegisterResponse>
 };
 
 // ── Admin Login ──────────────────────────────────────────────────────────
-export interface AdminLoginPayload {
-  userName?: string;
-  password?: string;
-}
-
-export interface AdminLoginResponse {
-  token: string;
-  expiresAt: string;
-  userName: string;
-}
-
-export const adminLogin = async (data: AdminLoginPayload): Promise<AdminLoginResponse> => {
-  const response = await apiClient.post<AdminLoginResponse>('/auth/admin-login', data);
-  return response.data;
-};
-
 // ── Login ───────────────────────────────────────────────────────────────
 export interface LoginPayload {
+  // The same endpoint accepts a platform-admin username, user mobile, or email.
   identifier: string;
   password?: string;
 }
@@ -56,6 +41,7 @@ export interface UserDTO {
   isEmailVerified?: boolean;
   credits: number;
   brokerId?: number;
+  role?: 'Admin' | 'User';
 }
 
 export interface LoginResponse {
@@ -64,6 +50,7 @@ export interface LoginResponse {
   token: string;
   refreshToken: string;
   expiresAt: string;
+  role: 'Admin' | 'User';
   user?: UserDTO;
   broker?: {
     broker_id: string | number;
