@@ -24,6 +24,19 @@ With Metro running, open a new terminal window/pane from the root of your React 
 
 ### Android
 
+The location picker uses Google Maps. Enable **Maps SDK for Android** for the
+Google Cloud project, restrict the key to the Android application ID
+`com.propseekrui` and the signing certificate SHA-1, then configure the key
+without committing it:
+
+```properties
+# android/local.properties (ignored by Git)
+GOOGLE_MAPS_API_KEY=your_android_restricted_key
+```
+
+CI builds can provide the same value through the `GOOGLE_MAPS_API_KEY`
+environment variable.
+
 ```sh
 # Using npm
 npm run android

@@ -56,6 +56,17 @@ jest.mock('react-native-webview', () => {
   return View;
 });
 
+jest.mock('react-native-maps', () => {
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: View,
+    Circle: View,
+    Marker: View,
+    PROVIDER_GOOGLE: 'google',
+  };
+});
+
 jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn(),
   setItem: jest.fn(),

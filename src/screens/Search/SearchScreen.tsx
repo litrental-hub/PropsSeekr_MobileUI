@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import WebView from 'react-native-webview';
+import MapView, { Circle, MapPressEvent, Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAppStore } from '../../store/appStore';
@@ -22,6 +22,17 @@ import { detectCurrentLocation, forwardGeocode, reverseGeocode } from '../../uti
 import { useTranslation } from 'react-i18next';
 
 const RADIUS_OPTIONS = [2, 5, 10, 15, 25];
+
+const getMapRegion = (latitude: number, longitude: number, radiusKm: number): Region => {
+  const latitudeDelta = Math.max(0.025, radiusKm * 0.018);
+
+  return {
+    latitude,
+    longitude,
+    latitudeDelta,
+    longitudeDelta: latitudeDelta * 0.9,
+  };
+};
 
 export default function SearchScreen() {
   const navigation = useNavigation();
@@ -37,79 +48,24 @@ export default function SearchScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const webViewRef = useRef<any>(null);
+  const mapRef = useRef<MapView>(null);
 
-  // Generate Leaflet OpenStreetMap HTML
-  const getMapHtml = (initialLat: number, initialLng: number, initialRadius: number) => `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <style>
-    body, html, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #050D1F; }
-    .leaflet-control-attribution { display: none !important; }
-    .leaflet-tile { filter: brightness(0.95); }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <script>
-    var map = L.map('map', { zoomControl: false }).setView([${initialLat}, ${initialLng}], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-    }).addTo(map);
+  const animateMapTo = (nextLat: number, nextLng: number, nextRadiusKm: number) => {
+    mapRef.current?.animateToRegion(getMapRegion(nextLat, nextLng, nextRadiusKm), 450);
+  };
 
-    var marker = L.marker([${initialLat}, ${initialLng}]).addTo(map);
-    var circle = L.circle([${initialLat}, ${initialLng}], {
-      color: '#2563EB',
-      fillColor: '#2563EB',
-      fillOpacity: 0.22,
-      weight: 2,
-      radius: ${initialRadius * 1000}
-    }).addTo(map);
+  const handleMapPress = async (event: MapPressEvent) => {
+    const { latitude, longitude } = event.nativeEvent.coordinate;
+    setLat(latitude);
+    setLng(longitude);
+    setIsLoading(true);
 
-    map.on('click', function(e) {
-      marker.setLatLng(e.latlng);
-      circle.setLatLng(e.latlng);
-      map.panTo(e.latlng);
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'CLICK', lat: e.latlng.lat, lng: e.latlng.lng }));
-      }
-    });
-
-    function updatePosition(newLat, newLng, newRadiusKm) {
-      var pos = [newLat, newLng];
-      marker.setLatLng(pos);
-      circle.setLatLng(pos);
-      if (newRadiusKm) circle.setRadius(newRadiusKm * 1000);
-      map.setView(pos, map.getZoom());
-    }
-
-    function updateRadius(newRadiusKm) {
-      circle.setRadius(newRadiusKm * 1000);
-    }
-  </script>
-</body>
-</html>
-`;
-
-  // Handle map clicks from WebView
-  const handleMessage = async (event: any) => {
     try {
-      const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'CLICK') {
-        setLat(data.lat);
-        setLng(data.lng);
-        setIsLoading(true);
-        const res = await reverseGeocode(data.lat, data.lng);
-        setLocality(res.locality);
-        setCity(res.city);
-        setIsLoading(false);
-      }
-    } catch (e) {
-      console.warn('Error parsing message from map:', e);
+      const res = await reverseGeocode(latitude, longitude);
+      setLocality(res.locality);
+      setCity(res.city);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -125,7 +81,7 @@ export default function SearchScreen() {
       const rev = await reverseGeocode(result.lat, result.lng);
       setLocality(rev.locality);
       setCity(rev.city);
-      webViewRef.current?.injectJavaScript(`updatePosition(${result.lat}, ${result.lng}, ${radiusKm}); true;`);
+      animateMapTo(result.lat, result.lng, radiusKm);
     }
     setIsLoading(false);
   };
@@ -139,7 +95,7 @@ export default function SearchScreen() {
       setLng(loc.lng);
       setCity(loc.city);
       setLocality(loc.locality);
-      webViewRef.current?.injectJavaScript(`updatePosition(${loc.lat}, ${loc.lng}, ${loc.radiusKm}); true;`);
+      animateMapTo(loc.lat, loc.lng, loc.radiusKm);
     }
     setIsLoading(false);
   };
@@ -147,7 +103,7 @@ export default function SearchScreen() {
   // Select Radius Option
   const handleRadiusChange = (newRadius: number) => {
     setRadiusKm(newRadius);
-    webViewRef.current?.injectJavaScript(`updateRadius(${newRadius}); true;`);
+    animateMapTo(lat, lng, newRadius);
   };
 
   // Save & Confirm
@@ -194,23 +150,30 @@ export default function SearchScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Interactive Leaflet Map ── */}
+        {/* ── Interactive Google Map ── */}
         <View style={styles.mapContainer}>
-          <WebView
-            ref={webViewRef}
-            source={{ html: getMapHtml(lat, lng, radiusKm) }}
-            onMessage={handleMessage}
-            style={styles.webview}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            startInLoadingState={true}
-            renderLoading={() => (
-              <View style={[styles.mapLoader, { backgroundColor: colors.bgMid }]}>
-                <ActivityIndicator size="large" color={Brand.teal} />
-                <Text style={[styles.loaderText, { color: colors.textSecondary }]}>Loading interactive map...</Text>
-              </View>
-            )}
-          />
+          <MapView
+            ref={mapRef}
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+            style={styles.map}
+            initialRegion={getMapRegion(lat, lng, radiusKm)}
+            onPress={handleMapPress}
+            showsUserLocation
+            showsMyLocationButton={false}
+            loadingEnabled
+            loadingIndicatorColor={Brand.teal}
+            loadingBackgroundColor={colors.bgMid}
+            toolbarEnabled={false}
+          >
+            <Circle
+              center={{ latitude: lat, longitude: lng }}
+              radius={radiusKm * 1000}
+              strokeColor={Brand.blue}
+              fillColor="rgba(37, 99, 235, 0.20)"
+              strokeWidth={2}
+            />
+            <Marker coordinate={{ latitude: lat, longitude: lng }} pinColor={Brand.blue} />
+          </MapView>
 
           {/* Floating GPS Target Trigger */}
           <TouchableOpacity style={styles.floatingGps} onPress={handleDetectGPS} activeOpacity={0.8}>
@@ -318,23 +281,8 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
-  webview: {
+  map: {
     flex: 1,
-    backgroundColor: 'transparent',
-  },
-  mapLoader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loaderText: {
-    marginTop: 12,
-    fontSize: 14,
-    fontWeight: '500',
   },
 
   floatingGps: {
