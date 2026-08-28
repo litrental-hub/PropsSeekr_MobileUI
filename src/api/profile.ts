@@ -12,7 +12,6 @@ export interface ProfileData {
   companyGst?: string;
   companyAddress?: string;
   isReraVerified?: boolean;
-  availableCredits?: number;
   [key: string]: any;
 }
 

@@ -19,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { addRequirement } from '../../api/requirements';
+import { addRequirement, updateRequirement } from '../../api/requirements';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PROPERTY_TYPES, BHK_OPTIONS } from '../../constants';
 import { forwardGeocode, reverseGeocode } from '../../utils/location';
@@ -367,7 +367,9 @@ export default function AddRequirementScreen() {
     };
 
     try {
-      const data = await addRequirement(payload);
+      const requirementId = route.params?.editId ?? editData?.requirementId ?? editData?.id;
+      const isEditing = requirementId !== undefined && requirementId !== null;
+      const data = isEditing ? await updateRequirement(requirementId, payload) : await addRequirement(payload);
 
       if (data) {
         Alert.alert(

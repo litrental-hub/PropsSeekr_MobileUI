@@ -12,7 +12,6 @@ export interface UnlockedContact {
 // ── Match DTO from GET /user-matches ─────────────────────────────
 export interface MatchDTO {
   id?: string;
-  _id?: string;
   matchId?: number;        // canonical integer from matches.matchid
   matchid?: number;        // alternate casing from backend
   state?: string;          // 'matched' | 'pending_confirmation' | 'confirmed' | 'expired'
@@ -37,7 +36,6 @@ export interface MatchDTO {
   incomingConnectionRequest?: boolean;
   currentBrokerRole?: 'listing' | 'requirement' | string;
   notificationId?: string;
-  initiatorPropertyRequestId?: string;
   [key: string]: any;
 }
 
@@ -188,9 +186,9 @@ export const getMatches = async (
         pageSize: limit,
         totalMatches: responsePayload?.totalCount || responsePayload?.total || matchesList.length,
         totalPages: Math.ceil((responsePayload?.totalCount || responsePayload?.total || matchesList.length) / limit) || 1,
-        excellentMatches: responsePayload?.excellentCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) >= 90).length,
-        goodMatches: responsePayload?.goodCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) >= 75 && Number(match.matchScore ?? 0) < 90).length,
-        fairMatches: responsePayload?.fairCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) < 75).length,
+        excellentMatches: responsePayload?.excellentCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) >= 80).length,
+        goodMatches: responsePayload?.goodCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) >= 60 && Number(match.matchScore ?? 0) < 80).length,
+        fairMatches: responsePayload?.fairCount ?? matchesList.filter(match => Number(match.matchScore ?? 0) < 60).length,
         unlockedMatches: responsePayload?.unlockedCount ?? matchesList.filter(match => match.isRevealed === true).length,
       }
     };
@@ -270,37 +268,5 @@ export const rejectMatch = async (matchId: number, data: RejectMatchPayload): Pr
 
 // ── Step 2: Reveal contacts (called after both confirmations) ─────
 // Idempotent: safe to retry; will NOT deduct credits again if already revealed
-export interface RevealMatchPayload {
-  matchId: number;
-}
-
-export interface RevealMatchResponse {
-  success: boolean;
-  message?: string;
-  errorCode?: string;
-  creditsRemaining?: number;
-  unlockedContact: UnlockedContact | null;
-}
-
-export const revealMatch = async (matchId: number, data: RevealMatchPayload): Promise<RevealMatchResponse> => {
-  const response = await apiClient.post<RevealMatchResponse>(
-    `/user-matches/matches/${matchId}/reveal`,
-    data
-  );
-  return response.data;
-};
 
 // ── Unlocked matches history (Credits screen) ────────────────────
-export interface GetUnlockedMatchesResponse {
-  success?: boolean;
-  data?: any[];
-  matches?: any[];
-  [key: string]: any;
-}
-
-export const getUnlockedMatches = async (): Promise<any[]> => {
-  const response = await apiClient.get<GetUnlockedMatchesResponse | any[]>('/user-matches/unlocked');
-  const resData: any = response.data;
-  if (Array.isArray(resData)) return resData;
-  return resData?.data || resData?.matches || resData?.items || [];
-};

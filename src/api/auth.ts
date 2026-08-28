@@ -39,7 +39,6 @@ export interface UserDTO {
   email: string;
   isMobileVerified: boolean;
   isEmailVerified?: boolean;
-  credits: number;
   brokerId?: number;
   role?: 'Admin' | 'User';
 }

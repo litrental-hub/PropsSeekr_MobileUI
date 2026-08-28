@@ -6,6 +6,8 @@ This is the mobile repository's current source of truth. Read it before adding a
 
 The backend companion is `PropSeekrMobileAPI/PropsSeekr-MobileAPI/APPLICATION_CONTEXT.md` in the shared workspace. Backend code and the database are authoritative for security, matching, wallet, and reveal decisions.
 
+Legacy `PropertyRequests`, `UnlockedProperty`, GUID `Notifications`, and account/broker credit mirror columns are historical-only. Their old routes return `410 Gone`; active UI/API paths use canonical listings, requirements, broker wallets, broker notifications, matches, confirmations, and reveals. Retire the historical tables only through a separately verified data-archive migration.
+
 ## Product model
 
 PropSeekr is a broker-to-broker Indian real-estate marketplace: brokers publish property supply (listings) and client demand (requirements), receive compatible cross-broker matches, request a connection, and reveal contact details only after mutual consent.
@@ -59,7 +61,7 @@ Wallet values are refreshed from `/brokers/{brokerId}/wallet` at startup/resume 
 
 The public token-pack catalogue is persisted in MMKV and rendered synchronously on Credits. A valid cache is fresh for six hours; stale data remains visible while one deduplicated background refresh runs, and a failed refresh falls back to the last valid catalogue. Wallet balances and payment order amounts are never sourced from this catalogue cache.
 
-`src/api/client.ts` is the single Axios client and attaches the bearer token. Known gap: its 401 interceptor calls `POST /auth/refresh`, but the current API has no refresh endpoint or persisted refresh-token flow. Expired tokens therefore cause logout. Do not promise silent renewal until both sides implement it.
+`src/api/client.ts` is the single Axios client and attaches the bearer token. The API has no refresh-token endpoint or persisted refresh-token flow, so a 401 clears local authentication and returns the user to login. Do not promise silent renewal until both sides implement it.
 
 ## Current journeys
 
@@ -74,6 +76,8 @@ The dashboard has an explicit location gate. A fresh/legacy install requests cur
 Dashboard discovery uses only canonical `/search/properties`. It does not combine matches or owned inventory. Rentals/Buy-Sell map to the server transaction direction, Available/Looking map to `SUPPLY`/`DEMAND`, property/configuration filters and debounced text search run server-side, and counts/pagination share the same filters.
 
 Listing and requirement cards are separate, strictly typed, and render only non-null database fields. Missing prices, areas, distances, amenities, preferences, freshness, and actions are omitted rather than replaced with mock content. Home discovery must never render or receive broker names, initials, brokerage details, phone numbers, other contact identity, or raw ingestion messages that may contain those values. Titles use structured property fields with neutral fallbacks. Its protected-contact action routes to the corresponding Matches view; only the mutual unlock flow may reveal contact data. Pull-to-refresh, retry, empty, loading, stale-request protection, and explicit load-more states are required.
+
+`/search/properties` reads canonical listings and requirements for every caller. It is a discovery feed, not an authorization to reveal broker identity or contact details. Canonical inventory and matching use the same listings and requirements.
 
 ### Google Map and location
 
@@ -93,13 +97,17 @@ The success alert does not claim embedding/matching completed unless that backen
 
 The property form persists its property-type-specific fields in the listing `details` object. Matching-critical values use canonical fields instead: project/society name, numeric floor when parseable, road width/access, and fixed/negotiable price status are sent explicitly alongside property type, configuration, price, size, furnishing, facing, and canonical location. When photo sharing is enabled, brokers may select up to 12 photos/videos from the device; the listing is created first, then media is uploaded to `/listings/{listingId}/media`. A media failure is reported as a partial success because the canonical listing already exists. Do not retry listing creation to retry media.
 
-Inventory passes `editId` and initial data, but submission still creates a new listing. This is not a complete edit workflow.
+Listing creation returns after the record and durable embedding job are committed. It returns `embedding_completed: false`, `embedding_status: queued`, and `embedding_job_id`; the API worker performs Vertex embedding and matching asynchronously with retry. Query `GET /embedding-jobs/{jobId}` for job state. Do not describe matching as completed until the job reports `completed`.
+
+Inventory passes `editId` and initial data. The review submission uses `PATCH /listings/{listingId}` when editing; a new form uses `POST /listings`.
+
+When a canonical listing is patched, the API invalidates every unrevealed match calculated from the prior content, expires pending connection requests, clears confirmations, and queues a replacement embedding/matching job. Revealed connections remain historical contact records. The worker clears the target embedding immediately before each job so an edit that races an active job is re-embedded from the newest persisted content.
 
 ### Add requirement
 
 `AddRequirementScreen` maps transaction/property/configuration, converts minimum/maximum area to square feet, supports fixed/flexible/discuss budget modes and minimum/maximum budget, accepts up to five semicolon-separated same-city preferred localities, exposes a 2/3/5/10 km radius, and sends optional furnishing, facing, project, and notes. It geocodes every locality and posts `/requirements`; the API resolves them to `master` and persists the IDs in `preferred_locality_ids`. Broker name/contact are derived from authenticated identity and are not duplicated in the requirement form payload.
 
-The screen can prefill initial data, but submission creates a new requirement; there is no canonical update endpoint.
+Requirement creation follows the same durable embedding-job contract as listings. The screen can prefill initial data; canonical updates use `PATCH /requirements/{requirementId}` and follow the same invalidation and durable re-embedding rules as listings.
 
 ### My Listings and Requirements
 
@@ -146,7 +154,7 @@ Rules:
 
 See `MATCHING_FLOW_UI_CONTEXT.md` for detailed state/copy rules.
 
-Known mismatch: API aggregate quality bands are 90/75, while current match cards and SQL tiers use 80/60. Resolve SQL, API, UI, and tests as one product decision.
+Match quality uses one product definition everywhere: 80–100 is Excellent, 60–79 is Good, and below 60 is Fair.
 
 ### Notifications, wallet, payments, upload
 
@@ -173,7 +181,7 @@ An older static `Colors` palette remains in shell/tab code. Prefer the dynamic s
 ## Compatibility and known gaps
 
 - `createRequirement()` calls nonexistent `/requirements/create`; the active form uses `addRequirement()`.
-- `revealMatch()` exists as compatibility code; the active UI uses `confirmMatch()`.
+- Direct-reveal and legacy unlocked-history adapters have been removed. The active UI uses `confirmMatch()` only; a reveal record returned by canonical match reads is the sole contact authority.
 - `admin.ts` exposes internal maintenance operations, not normal user actions.
 - Property and requirement standalone detail screens are still placeholders; match detail is implemented and database-backed.
 - Historical inventory without canonical locality coordinates is intentionally absent from nearby search until backfilled.

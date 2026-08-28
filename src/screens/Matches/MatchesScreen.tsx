@@ -63,9 +63,7 @@ interface MatchDetails {
 
 interface Match {
   matchId: number;                  // integer from matches.matchid
-  _id?: string;                     // legacy
   notificationId?: string;
-  initiatorPropertyRequestId?: string;
   // ── New handshake state fields ──
   state: 'matched' | 'pending_confirmation' | 'confirmed' | 'expired' | string;
   currentBrokerConfirmed: boolean;  // has the logged-in broker already confirmed?
@@ -204,9 +202,7 @@ function mapDTOToMatch(dto: MatchDTO, defaultTxType?: string): Match {
       location,
       price: propPrice !== 'Price On Request' ? propPrice : 'Budget Matched',
     },
-    _id: raw.id || raw._id || Math.random().toString(),
-    notificationId: raw.notificationId || raw.id || raw._id || '',
-    initiatorPropertyRequestId: raw.initiatorPropertyRequestId || '',
+    notificationId: raw.notificationId || '',
   };
 }
 

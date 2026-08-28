@@ -4,10 +4,10 @@ import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAddPropertyForm } from '../AddPropertyContext';
 import { useAppTheme, Brand } from '../../../../theme/useAppTheme';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { FormInput } from '../../../../components/forms/FormInput';
 import { useTranslation } from 'react-i18next';
-import { addListing, uploadListingMedia } from '../../../../api/property';
+import { addListing, updateListing, uploadListingMedia } from '../../../../api/property';
 import { useAuthStore } from '../../../../store/authStore';
 import { forwardGeocode } from '../../../../utils/location';
 
@@ -15,6 +15,7 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
   const { state, updateState } = useAddPropertyForm();
   const { colors, isDark } = useAppTheme();
   const navigation = useNavigation();
+  const route = useRoute<any>();
   const { t } = useTranslation();
   const user = useAuthStore(s => s.user);
   
@@ -169,22 +170,25 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
     };
 
     try {
-      const res = await addListing(payload);
+      const editData = route.params?.initialData;
+      const listingId = route.params?.editId ?? editData?.listingId ?? editData?.id;
+      const isEditing = listingId !== undefined && listingId !== null;
+      const res = isEditing ? await updateListing(listingId, payload) : await addListing(payload);
 
-      if (res.success || res.listing_id) {
+      if (res.success || res.listing_id || res.listingId) {
         let mediaWarning = '';
-        const listingId = Number(res.listing_id || res.listingId || 0);
-        if (listingId > 0 && state.media.length > 0) {
+        const savedListingId = Number(res.listing_id || res.listingId || listingId || 0);
+        if (savedListingId > 0 && state.media.length > 0) {
           try {
-            await uploadListingMedia(listingId, state.media);
+            await uploadListingMedia(savedListingId, state.media);
           } catch (mediaError: any) {
-            mediaWarning = `\n\nThe listing was created, but media upload failed: ${mediaError?.response?.data?.message || mediaError?.message || 'Please try again later.'}`;
+            mediaWarning = `\n\nThe listing was saved, but media upload failed: ${mediaError?.response?.data?.message || mediaError?.message || 'Please try again later.'}`;
           }
         }
         setIsSubmitting(false);
         Alert.alert(
-          '✅ Property Listed Successfully!',
-          `Your property has been submitted (ID: ${res.listing_id || res.listingId || 'N/A'}).${mediaWarning}`,
+          isEditing ? '✅ Property Updated Successfully!' : '✅ Property Listed Successfully!',
+          `Your property has been saved (ID: ${res.listing_id || res.listingId || listingId || 'N/A'}).${mediaWarning}`,
           [
             {
               text: 'View My Listings',

@@ -37,6 +37,15 @@ export interface SearchPropertiesPayload {
   budget?: BudgetPayload;
   filters: MarketplaceFiltersPayload;
   pagination: PaginationPayload;
+  /** Compatibility inputs normalized to the canonical location/pagination shape. */
+  city?: string;
+  locality?: string;
+  latitude?: number;
+  longitude?: number;
+  radiusKm?: number;
+  query?: string;
+  page?: number;
+  limit?: number;
 }
 
 export interface MarketplaceFeature {
@@ -107,7 +116,23 @@ export interface SearchPropertiesResponse {
 }
 
 export const searchProperties = async (data: SearchPropertiesPayload): Promise<SearchPropertiesResponse> => {
-  const response = await apiClient.post<SearchPropertiesResponse>('/search/properties', data);
+  const location = data.location ?? {
+    city: typeof data.city === 'string' ? data.city : '',
+    locality: typeof data.locality === 'string' ? data.locality : '',
+    lat: data.latitude ?? 0,
+    lng: data.longitude ?? 0,
+    radiusKm: data.radiusKm ?? 0,
+  };
+  const response = await apiClient.post<SearchPropertiesResponse>('/search/properties', {
+    transactionType: data.transactionType,
+    listingType: data.listingType,
+    category: data.category,
+    location,
+    searchQuery: data.searchQuery || (typeof data.query === 'string' ? data.query : ''),
+    budget: data.budget,
+    filters: data.filters,
+    pagination: data.pagination ?? { page: data.page ?? 1, limit: data.limit ?? 20 },
+  });
   return response.data;
 };
 
@@ -142,10 +167,12 @@ export interface AddListingPayload {
 export interface AddListingResponse {
   success?: boolean;
   listing_id?: number;
+  listingId?: number;
   message?: string;
-  // legacy fallback
-  status?: string;
-  listingId?: string;
+  match_count?: number;
+  embedding_completed?: boolean;
+  embedding_status?: 'queued' | 'processing' | 'completed' | 'failed';
+  embedding_job_id?: string;
 }
 
 export const addListing = async (data: AddListingPayload): Promise<AddListingResponse> => {
@@ -278,6 +305,11 @@ export const uploadBulkTxtFile = async (fileUri: string, fileName: string): Prom
   );
 
   return key;
+};
+
+export const updateListing = async (listingId: string | number, data: AddListingPayload): Promise<AddListingResponse> => {
+  const response = await apiClient.patch<AddListingResponse>(`/listings/${encodeURIComponent(String(listingId))}`, data);
+  return response.data;
 };
 
 // ── Additional Listing Endpoints (Entire Flow) ───────────────────

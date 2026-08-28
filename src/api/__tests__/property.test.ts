@@ -1,5 +1,5 @@
 import apiClient from '../client';
-import { addListing, getMyListings } from '../property';
+import { addListing, getMyListings, searchProperties } from '../property';
 
 jest.mock('../client', () => ({
   __esModule: true,
@@ -62,6 +62,32 @@ describe('addListing', () => {
       project_name: 'Omaxe Hills',
       road_info: '60 ft road',
       price_status: 'NEGOTIABLE',
+    }));
+  });
+});
+
+describe('searchProperties', () => {
+  beforeEach(() => mockedPost.mockReset());
+
+  it('forwards canonical text, budget, and structured filters', async () => {
+    mockedPost.mockResolvedValue({ data: { status: 'success', results: [], requirements: [], totalCount: 0, availableCount: 0, lookingCount: 0, page: 1, limit: 20 } });
+    const payload = {
+      transactionType: 'BUY_SELL' as const,
+      listingType: 'SUPPLY' as const,
+      category: 'RESIDENTIAL',
+      location: { city: 'Indore', locality: 'Vijay Nagar', lat: 22.7533, lng: 75.8937, radiusKm: 5 },
+      searchQuery: '2 BHK',
+      budget: { min: 4000000, max: 6000000 },
+      filters: { propertyTypes: ['APARTMENT'], configurations: ['2BHK'], categories: ['RESIDENTIAL'], budget: { min: 4000000, max: 6000000 } },
+      pagination: { page: 1, limit: 20 },
+    };
+
+    await searchProperties(payload);
+
+    expect(mockedPost).toHaveBeenCalledWith('/search/properties', expect.objectContaining({
+      searchQuery: '2 BHK',
+      budget: payload.budget,
+      filters: payload.filters,
     }));
   });
 });

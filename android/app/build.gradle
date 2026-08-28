@@ -96,6 +96,14 @@ android {
             usesCleartextTraffic: "false",
             googleMapsApiKey: googleMapsApiKey,
         ]
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+        ndk {
+            abiFilters "x86_64"
+        }
     }
     signingConfigs {
         debug {
