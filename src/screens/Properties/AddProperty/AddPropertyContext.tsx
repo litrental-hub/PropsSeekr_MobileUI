@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { AddPropertyFormState, initialFormState } from './types';
 
 interface AddPropertyContextProps {
@@ -15,11 +15,11 @@ export function AddPropertyProvider({ children }: { children: React.ReactNode })
   const [state, setState] = useState<AddPropertyFormState>(initialFormState);
   const [isSimulatingAI, setIsSimulatingAI] = useState(false);
 
-  const updateState = (updates: Partial<AddPropertyFormState>) => {
+  const updateState = useCallback((updates: Partial<AddPropertyFormState>) => {
     setState(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
-  const updateAmenity = (key: string, value: boolean | string) => {
+  const updateAmenity = useCallback((key: string, value: boolean | string) => {
     setState(prev => ({
       ...prev,
       amenities: {
@@ -27,10 +27,18 @@ export function AddPropertyProvider({ children }: { children: React.ReactNode })
         [key]: value,
       },
     }));
-  };
+  }, []);
+
+  const value = useMemo(() => ({
+    state,
+    updateState,
+    updateAmenity,
+    isSimulatingAI,
+    setIsSimulatingAI,
+  }), [isSimulatingAI, state, updateAmenity, updateState]);
 
   return (
-    <AddPropertyContext.Provider value={{ state, updateState, updateAmenity, isSimulatingAI, setIsSimulatingAI }}>
+    <AddPropertyContext.Provider value={value}>
       {children}
     </AddPropertyContext.Provider>
   );

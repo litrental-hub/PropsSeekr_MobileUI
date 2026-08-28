@@ -7,12 +7,11 @@ import { useAppTheme, Brand } from '../../../../theme/useAppTheme';
 import { useNavigation } from '@react-navigation/native';
 import { FormInput } from '../../../../components/forms/FormInput';
 import { useTranslation } from 'react-i18next';
-import { addListing } from '../../../../api/property';
+import { addListing, uploadListingMedia } from '../../../../api/property';
 import { useAuthStore } from '../../../../store/authStore';
-import Geolocation from '@react-native-community/geolocation';
-import { requestLocationPermissions } from '../../../../utils/location';
+import { forwardGeocode } from '../../../../utils/location';
 
-export function ReviewCardSection({ themeColor, setStep }: { themeColor: string, setStep: (step: number) => void }) {
+export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (step: number) => void }) {
   const { state, updateState } = useAddPropertyForm();
   const { colors, isDark } = useAppTheme();
   const navigation = useNavigation();
@@ -41,8 +40,6 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
 
   const activeAmenities = Object.entries(state.amenities).filter(([_, v]) => v).map(([k]) => k);
 
-  const formatCurrency = (val: string) => val ? `₹${val.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : '';
-
   // AI Badge Renderer
   const renderAIBadge = (field: string) => {
     if (state.aiFilledFields.includes(field)) {
@@ -62,54 +59,59 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
     { key: 'maintenanceCharges', label: 'Maintenance Charges', value: state.maintenanceCharges },
   ].filter(f => !f.value);
 
+  const buildStructuredDetails = () => {
+    const excluded = new Set([
+      'transactionType', 'propertyType', 'city', 'areaLocality', 'projectName', 'bhk', 'carpetArea',
+      'monthlyRent', 'salePrice', 'furnishingStatus', 'facing', 'additionalNotes', 'media', 'aiFilledFields',
+    ]);
+    return Object.fromEntries(Object.entries(state).flatMap(([key, value]) => {
+      if (excluded.has(key) || value === null || value === undefined || value === '') return [];
+      if (value instanceof Date) return [[key, value.toISOString()]];
+      if (Array.isArray(value)) return value.length ? [[key, value]] : [];
+      if (typeof value === 'object') {
+        const usefulEntries = Object.entries(value).filter(([, item]) => item !== false && item !== '' && item !== 'unselected');
+        return usefulEntries.length ? [[key, Object.fromEntries(usefulEntries)]] : [];
+      }
+      return [[key, value]];
+    }));
+  };
+
+  const canonicalFloorNumber = () => {
+    const value = state.floorNumber.trim().toLowerCase();
+    if (!value) return undefined;
+    if (value === 'ground' || value === 'ground floor' || value === 'g') return 0;
+    if (value === 'basement' || value === 'lower ground') return -1;
+    const numeric = value.match(/-?\d+/)?.[0];
+    return numeric === undefined ? undefined : Number(numeric);
+  };
+
   const handleSubmit = async () => {
-    if (!state.transactionType || !state.propertyType || !state.areaLocality?.trim() || (state.transactionType === 'Rent' ? !state.monthlyRent : !state.salePrice)) {
+    if (!state.transactionType || !state.propertyType || !state.city?.trim() || !state.areaLocality?.trim() || (state.transactionType === 'Rent' ? !state.monthlyRent : !state.salePrice)) {
       Alert.alert(
         'Incomplete Form',
-        'Please ensure Transaction Type, Property Type, Area/Locality, and Price/Rent are completed before submitting.',
+        'Please ensure Transaction Type, Property Type, City, Area/Locality, and Price/Rent are completed before submitting.',
         [{ text: 'Go Back to Edit', onPress: () => setStep(1) }]
       );
       return;
     }
 
     setIsSubmitting(true);
-    const hasPerm = await requestLocationPermissions();
-    if (!hasPerm) {
+    const geocodedLocation = await forwardGeocode(`${state.areaLocality}, ${state.city}`);
+    if (!geocodedLocation) {
       setIsSubmitting(false);
-      Alert.alert('Location Permission Required', 'Location access is required to attach valid GPS coordinates for automated property matchmaking. Please grant location access.');
+      Alert.alert('Location Not Found', 'We could not locate this property area on the map. Please enter a more specific locality and city.');
       return;
     }
-
-    let lat = 0;
-    let lng = 0;
-    try {
-      const coords = await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
-        Geolocation.getCurrentPosition(
-          (pos) => resolve(pos.coords),
-          (err) => reject(err),
-          { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-        );
-      });
-      lat = coords.latitude;
-      lng = coords.longitude;
-    } catch (err) {
-      setIsSubmitting(false);
-      Alert.alert('GPS Unavailable', 'Could not obtain valid GPS coordinates for radius matching. Please check your GPS settings and try again.');
-      return;
-    }
-
-    if (!lat || !lng || (lat === 0 && lng === 0)) {
-      setIsSubmitting(false);
-      Alert.alert('Invalid Coordinates', 'Obtained invalid GPS coordinates. Please verify your GPS signal and try again.');
-      return;
-    }
+    const lat = geocodedLocation.lat;
+    const lng = geocodedLocation.lng;
 
     const priceNum = state.transactionType === 'Rent'
       ? parseFloat(String(state.monthlyRent || '0').replace(/[^0-9.]/g, '')) || 0
       : parseFloat(String(state.salePrice || '0').replace(/[^0-9.]/g, '')) || 0;
 
-    const areaNum = parseFloat(String(state.carpetArea || state.plotArea || state.superBuiltupArea || '1200').replace(/[^0-9.]/g, '')) || 1200;
-    const bedroomsNum = parseInt(state.bhk || String(state.numberOfBedrooms || 0), 10) || (state.bhk?.includes('1') ? 1 : state.bhk?.includes('2') ? 2 : state.bhk?.includes('3') ? 3 : state.bhk?.includes('4') ? 4 : 1);
+    const areaNum = parseFloat(String(state.carpetArea || state.plotArea || state.superBuiltupArea || '').replace(/[^0-9.]/g, '')) || 0;
+    const isHouse = state.propertyType === 'Independent House' || state.propertyType === 'Bungalow/Villa';
+    const bedroomsNum = parseInt(state.bhk || (isHouse ? String(state.numberOfBedrooms || 0) : '0'), 10) || 0;
 
     // --- Map UI property type to backend enum ---
     const propertyTypeMap: Record<string, string> = {
@@ -124,7 +126,12 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
       'Agricultural Land': 'AGRICULTURAL_LAND',
       'Institution/Specialised': 'INSTITUTION',
     };
-    const backendPropertyType = propertyTypeMap[state.propertyType || ''] || 'APARTMENT';
+    const backendPropertyType = propertyTypeMap[state.propertyType];
+    if (!backendPropertyType) {
+      setIsSubmitting(false);
+      Alert.alert('Invalid property type', 'Please select a supported property type.');
+      return;
+    }
 
     // --- BHK numeric value ---
     const bhkNum = parseInt(state.bhk || '0', 10) || 0;
@@ -134,34 +141,50 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
       broker_id: Number(user?.brokerId) || 0,
       listing_type: state.transactionType === 'Rent' ? 'RENT' as const : 'SELL' as const,
       property_type: backendPropertyType,
-      locality: state.areaLocality || state.city || 'Unknown',
+      locality: state.areaLocality,
       price: priceNum,
       price_unit: state.transactionType === 'Rent' ? 'PER_MONTH' : 'INR',
       configuration: state.bhk || (bedroomsNum > 0 ? `${bedroomsNum} BHK` : undefined),
-      size: areaNum,
+      size: areaNum > 0 ? areaNum : undefined,
       furnishing: state.furnishingStatus || undefined,
       facing: state.facing || undefined,
-      project_name: state.societyColonyName || state.areaLocality || undefined,
+      floor_number: canonicalFloorNumber(),
+      project_name: state.projectName || state.societyColonyName || state.areaLocality || undefined,
+      road_info: state.roadWidth || state.roadAccessWidth || undefined,
+      price_status: state.negotiable ? 'NEGOTIABLE' as const : 'FIXED' as const,
       city: state.city || undefined,
+      latitude: lat,
+      longitude: lng,
       raw_message_text: state.additionalNotes || undefined,
       posted_by: 'BROKER',
+      photo_sharing_preference: state.photoPreference,
+      details: buildStructuredDetails(),
       requirement_ids: [] as number[],
-      sizes: [
+      sizes: areaNum > 0 ? [
         {
           size_sqft: areaNum,
           bhk: bhkNum,
         }
-      ],
+      ] : [],
     };
 
     try {
       const res = await addListing(payload);
-      setIsSubmitting(false);
 
       if (res.success || res.listing_id) {
+        let mediaWarning = '';
+        const listingId = Number(res.listing_id || res.listingId || 0);
+        if (listingId > 0 && state.media.length > 0) {
+          try {
+            await uploadListingMedia(listingId, state.media);
+          } catch (mediaError: any) {
+            mediaWarning = `\n\nThe listing was created, but media upload failed: ${mediaError?.response?.data?.message || mediaError?.message || 'Please try again later.'}`;
+          }
+        }
+        setIsSubmitting(false);
         Alert.alert(
           '✅ Property Listed Successfully!',
-          `Your property has been submitted (ID: ${res.listing_id || 'N/A'}) and automated matchmaking has begun.`,
+          `Your property has been submitted (ID: ${res.listing_id || res.listingId || 'N/A'}).${mediaWarning}`,
           [
             {
               text: 'View My Listings',
@@ -172,6 +195,7 @@ export function ReviewCardSection({ themeColor, setStep }: { themeColor: string,
           ]
         );
       } else {
+        setIsSubmitting(false);
         Alert.alert('❌ Submission Failed', res.message || 'Could not save property listing. Please try again.');
       }
     } catch (err: any) {

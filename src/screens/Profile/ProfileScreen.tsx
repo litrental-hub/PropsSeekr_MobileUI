@@ -20,7 +20,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useAppTheme, Brand, BtnStyle } from '../../theme/useAppTheme';
+import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { Card, Shadow, FontSize, FontWeight, Spacing, Radius } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import { useTranslation } from 'react-i18next';
@@ -41,9 +41,9 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function ProfileScreen() {
   const logout = useAuthStore(s => s.logout);
-  const { colors, type, isDark } = useAppTheme();
+  const { colors, type } = useAppTheme();
   const user = useAuthStore(s => s.user);
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigation = useNavigation<any>();
 
   // Local state for photo just to show UI interaction
@@ -98,7 +98,7 @@ export default function ProfileScreen() {
       };
 
       fetchUserData();
-    }, [reset, user?.id])
+    }, [reset, user?.brokerId])
   );
 
   const onSubmit = async (data: ProfileFormData) => {
@@ -284,7 +284,7 @@ export default function ProfileScreen() {
                        iconName="account"
                        placeholder="e.g. Test User"
                        hasError={!!errors.name}
-                       value={value}
+                       value={value ?? ''}
                        onBlur={onBlur}
                        onChangeText={onChange}
                      />
@@ -302,7 +302,7 @@ export default function ProfileScreen() {
                        iconName="email-outline"
                        placeholder="e.g. name@company.com"
                        hasError={!!errors.email}
-                       value={value}
+                       value={value ?? ''}
                        onBlur={onBlur}
                        onChangeText={onChange}
                        keyboardType="email-address"
@@ -311,7 +311,7 @@ export default function ProfileScreen() {
                 />
               </Field>
 
-              <SectionDivider title={t('profile.companyDetails', 'COMPANY DETAILS')} Brand={Brand} />
+              <SectionDivider title={t('profile.companyDetails', 'COMPANY DETAILS')} />
 
               {/* Company Name */}
               <Field label={t('profile.companyName', 'Company Name *')} error={errors.companyName?.message}>
@@ -323,7 +323,7 @@ export default function ProfileScreen() {
                        iconName="office-building"
                        placeholder="e.g. PropSeekr Realty"
                        hasError={!!errors.companyName}
-                       value={value}
+                       value={value ?? ''}
                        onBlur={onBlur}
                        onChangeText={onChange}
                      />
@@ -360,7 +360,7 @@ export default function ProfileScreen() {
                        iconName="map-marker-outline"
                        placeholder="e.g. Vijay Nagar, Indore"
                        hasError={!!errors.companyAddress}
-                       value={value}
+                       value={value ?? ''}
                        onBlur={onBlur}
                        onChangeText={onChange}
                      />
@@ -456,7 +456,7 @@ function InputBox({
   );
 }
 
-function SectionDivider({ title, desc, Brand }: { title: string; desc?: string; Brand: any }) {
+function SectionDivider({ title, desc }: { title: string; desc?: string }) {
   const { colors } = useAppTheme();
   return (
     <View style={styles.sectionDividerWrap}>

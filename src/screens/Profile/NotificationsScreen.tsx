@@ -68,10 +68,12 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const fetchNotifications = React.useCallback(async () => {
+  const fetchNotifications = React.useCallback(async (showLoading = true) => {
     if (!brokerId) return;
-    setLoading(true);
-    setLoadError(null);
+    if (showLoading) {
+      setLoading(true);
+      setLoadError(null);
+    }
     try {
       const filterParam = selectedFilter.toUpperCase().replace(' ', '_');
       const res = await getNotifications(brokerId, 1, 20, filterParam);
@@ -89,20 +91,28 @@ export default function NotificationsScreen() {
         meta: n.meta,
       })));
       setUnreadNotifications(res.unreadCount);
+      setLoadError(null);
     } catch (e) {
       console.warn('Failed to fetch notifications from API.', e);
-      setNotifications([]);
-      setLoadError('Could not load notifications. Pull back and try again.');
+      if (showLoading) {
+        setNotifications([]);
+        setLoadError('Could not load notifications. Pull back and try again.');
+      }
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [brokerId, selectedFilter, setUnreadNotifications]);
 
   useFocusEffect(
     React.useCallback(() => {
       if (brokerId) {
-        fetchNotifications();
+        void fetchNotifications(true);
+        const timer = setInterval(() => {
+          void fetchNotifications(false);
+        }, 15000);
+        return () => clearInterval(timer);
       }
+      return undefined;
     }, [brokerId, fetchNotifications])
   );
 
@@ -158,7 +168,7 @@ export default function NotificationsScreen() {
       case 'CONTACT_UNLOCKED':
         return { name: 'lock-open-check-outline', color: colors.successText, bg: colors.successFaint };
       case 'BROKER_ACCEPTED':
-        return { name: 'handshake-outline', color: colors.infoText, bg: colors.infoFaint };
+        return { name: 'check-decagram-outline', color: colors.successText, bg: colors.successFaint };
       case 'CONNECTION_REQUESTED':
         return { name: 'account-question-outline', color: colors.warningText, bg: colors.warningFaint };
       case 'BROKER_CONFIRMED':
@@ -265,7 +275,7 @@ export default function NotificationsScreen() {
                 {loadError || 'We will notify you when another broker requests an unlock or a matching property is found.'}
               </Text>
               {loadError ? (
-                <TouchableOpacity style={styles.dismissBtn} onPress={fetchNotifications}>
+                <TouchableOpacity style={styles.dismissBtn} onPress={() => fetchNotifications(true)}>
                   <Text style={styles.markReadText}>Retry</Text>
                 </TouchableOpacity>
               ) : null}
@@ -273,6 +283,13 @@ export default function NotificationsScreen() {
           ) : (
             filteredNotifications.map(item => {
               const iconConfig = getNotificationIcon(item.type, colors);
+              const statusBadge = item.type === 'BROKER_ACCEPTED'
+                ? { label: 'Accepted · Contact unlocked', icon: 'lock-open-check-outline', color: colors.successText, background: colors.successFaint }
+                : item.type === 'BROKER_REJECTED'
+                  ? { label: 'Declined', icon: 'close-circle-outline', color: colors.errorText, background: colors.errorFaint }
+                  : (item.type === 'BROKER_UNLOCK' || item.type === 'BROKER_REQUEST') && item.actionStatus === 'pending'
+                    ? { label: 'Awaiting your response', icon: 'clock-outline', color: colors.warningText, background: colors.warningFaint }
+                    : null;
               return (
                 <TouchableOpacity
                   key={item.id}
@@ -298,6 +315,13 @@ export default function NotificationsScreen() {
 
                   <Text style={[styles.cardBody, { color: colors.textSecondary }]}>{item.body}</Text>
 
+                  {statusBadge ? (
+                    <View style={[styles.statusBadge, { backgroundColor: statusBadge.background }]}>
+                      <MaterialCommunityIcons name={statusBadge.icon} size={14} color={statusBadge.color} />
+                      <Text style={[styles.statusBadgeText, { color: statusBadge.color }]}>{statusBadge.label}</Text>
+                    </View>
+                  ) : null}
+
                   {/* Action Buttons based on notification type */}
                   <View style={styles.actionRow}>
                     {(item.type === 'BROKER_UNLOCK' || item.type === 'BROKER_REQUEST') && item.actionStatus === 'pending' && item.meta?.matchId ? (
@@ -318,9 +342,23 @@ export default function NotificationsScreen() {
                       </TouchableOpacity>
                     ) : null}
 
-                    {(item.type === 'BROKER_ACCEPTED' || item.type === 'BROKER_REJECTED') && item.meta?.matchId ? (
+                    {item.type === 'BROKER_ACCEPTED' && item.meta?.matchId ? (
+                      <TouchableOpacity style={styles.actionButton} activeOpacity={0.85} onPress={() => handleViewMatch(item)}>
+                        <LinearGradient
+                          colors={[Brand.blue, Brand.teal]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={styles.actionBtnGrad}
+                        >
+                          <MaterialCommunityIcons name="lock-open-check-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <Text style={styles.actionBtnText}>View Unlocked Contact</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    ) : null}
+
+                    {item.type === 'BROKER_REJECTED' && item.meta?.matchId ? (
                       <TouchableOpacity style={styles.dismissBtn} onPress={() => handleViewMatch(item)}>
-                        <Text style={[styles.dismissText, { color: item.type === 'BROKER_ACCEPTED' ? Brand.teal : colors.errorText }]}>View Match</Text>
+                        <Text style={[styles.dismissText, { color: colors.errorText }]}>View Match</Text>
                       </TouchableOpacity>
                     ) : null}
 
@@ -473,7 +511,21 @@ const styles = StyleSheet.create({
   cardBody: {
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 14,
+    marginBottom: 12,
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 12,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
   },
   actionRow: {
     flexDirection: 'row',

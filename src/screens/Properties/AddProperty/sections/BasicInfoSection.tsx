@@ -15,7 +15,6 @@ export function BasicInfoSection({ themeColor }: { themeColor: string }) {
 
   // Validate mandatories locally for highlights
   const missingType = !state.transactionType;
-  const missingPropType = !state.propertyType;
   const missingArea = !state.areaLocality.trim();
   const missingCarpet = !state.carpetArea.trim();
 
@@ -75,6 +74,13 @@ export function BasicInfoSection({ themeColor }: { themeColor: string }) {
         value={state.landmark}
         onChangeText={(v) => updateState({ landmark: v })}
         warning={!state.landmark.trim() && isSimulatingAI ? t('basicInfo.fillForBetterMatches') : undefined}
+      />
+
+      <FormInput
+        label="Project / Society Name"
+        placeholder="e.g. Omaxe Hills (optional)"
+        value={state.projectName}
+        onChangeText={(v) => updateState({ projectName: v })}
       />
 
       {(state.propertyType === 'Flat/Apartment' || state.propertyType === 'Independent House' || state.propertyType === 'Bungalow/Villa') && (

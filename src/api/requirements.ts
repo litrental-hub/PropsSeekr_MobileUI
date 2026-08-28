@@ -7,12 +7,22 @@ export interface RequirementPayload {
   configurations: string[];
   description: string;
   budgetMax: number;
+  budgetMin?: number;
+  budgetType?: 'FIXED' | 'FLEXIBLE' | 'NOBUDGET';
   minimumSize: number;
+  maximumSize?: number;
   city: string;
   locality: string;
   lat: number;
   lng: number;
   radiusKm: number;
+  preferredLocations?: Array<{
+    city: string;
+    locality: string;
+    lat: number;
+    lng: number;
+  }>;
+  preferredProjectNames?: string[];
   furnishingPreference?: string;
   facingPreference?: string;
   additionalNotes?: string;

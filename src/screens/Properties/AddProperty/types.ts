@@ -1,5 +1,15 @@
 export type TransactionType = 'Rent' | 'Sale' | null;
 
+export interface SelectedListingMedia {
+  uri: string;
+  fileName: string;
+  mimeType: string;
+  fileSize?: number;
+  duration?: number | null;
+  width?: number;
+  height?: number;
+}
+
 export type PropertyType = 
   | 'Flat/Apartment'
   | 'Independent House'
@@ -21,6 +31,7 @@ export interface AddPropertyFormState {
   city: string;
   areaLocality: string;
   landmark: string;
+  projectName: string;
   bhk: string;
   carpetArea: string;
   availableFrom: Date | null;
@@ -56,6 +67,7 @@ export interface AddPropertyFormState {
   wfhAllowed: string; // Yes / No / Poochho
   policeVerification: boolean;
   photoPreference: string;
+  media: SelectedListingMedia[];
   additionalNotes: string;
   
   // Commercial Preferences
@@ -149,6 +161,7 @@ export const initialFormState: AddPropertyFormState = {
   city: 'Indore',
   areaLocality: '',
   landmark: '',
+  projectName: '',
   bhk: '',
   carpetArea: '',
   availableFrom: new Date(),
@@ -180,6 +193,7 @@ export const initialFormState: AddPropertyFormState = {
   wfhAllowed: 'Poochho',
   policeVerification: false,
   photoPreference: 'Share freely',
+  media: [],
   additionalNotes: '',
 
   tenantBusinessType: [],

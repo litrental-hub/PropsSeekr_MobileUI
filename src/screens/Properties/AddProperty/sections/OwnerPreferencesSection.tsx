@@ -1,5 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAddPropertyForm } from '../AddPropertyContext';
 import { MultiStateChip, ChipState } from '../../../../components/forms/MultiStateChip';
 import { ChipSelector } from '../../../../components/forms/ChipSelector';
@@ -67,6 +69,41 @@ export function OwnerPreferencesSection({ themeColor }: { themeColor: string }) 
     state.propertyType === 'Shop/Retail' || 
     state.propertyType === 'Warehouse' || 
     state.propertyType === 'Institution/Specialised';
+
+  const pickMedia = async () => {
+    const remaining = 12 - state.media.length;
+    if (remaining <= 0) {
+      Alert.alert('Media limit reached', 'You can add up to 12 photos and videos.');
+      return;
+    }
+
+    const result = await launchImageLibrary({
+      mediaType: 'mixed',
+      selectionLimit: remaining,
+      quality: 0.8,
+      videoQuality: 'high',
+      assetRepresentationMode: 'compatible',
+    });
+    if (result.didCancel) return;
+    if (result.errorCode) {
+      Alert.alert('Could not open gallery', result.errorMessage || 'Please try again.');
+      return;
+    }
+
+    const selected = (result.assets || []).flatMap((asset, index) => {
+      if (!asset.uri || !asset.type) return [];
+      return [{
+        uri: asset.uri,
+        fileName: asset.fileName || `listing-media-${Date.now()}-${index}.${asset.type.startsWith('video/') ? 'mp4' : 'jpg'}`,
+        mimeType: asset.type,
+        fileSize: asset.fileSize,
+        duration: asset.duration,
+        width: asset.width,
+        height: asset.height,
+      }];
+    });
+    updateState({ media: [...state.media, ...selected].slice(0, 12) });
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
@@ -171,10 +208,50 @@ export function OwnerPreferencesSection({ themeColor }: { themeColor: string }) 
         <ChipSelector
           options={['Share freely', 'On request', 'No photos']}
           selected={state.photoPreference}
-          onSelect={(v) => updateState({ photoPreference: v })}
+          onSelect={(v) => updateState({ photoPreference: v, ...(v === 'No photos' ? { media: [] } : {}) })}
           themeColor={themeColor}
         />
       </View>
+
+      {state.photoPreference !== 'No photos' && (
+        <View style={styles.fieldGroup}>
+          <View style={styles.mediaHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Property Photos & Videos</Text>
+              <Text style={[styles.mediaHint, { color: colors.textSecondary }]}>Add up to 12 items. Videos can be up to 100 MB.</Text>
+            </View>
+            <Text style={[styles.mediaCount, { color: Brand.teal }]}>{state.media.length}/12</Text>
+          </View>
+
+          <View style={styles.mediaGrid}>
+            {state.media.map((item, index) => (
+              <View key={`${item.uri}-${index}`} style={[styles.mediaTile, { borderColor: Brand.blueBorder }]}>
+                {item.mimeType.startsWith('image/') ? (
+                  <Image source={{ uri: item.uri }} style={styles.mediaPreview} />
+                ) : (
+                  <View style={[styles.mediaPreview, styles.videoPreview]}>
+                    <MaterialCommunityIcons name="play-circle" size={34} color="#FFFFFF" />
+                    <Text style={styles.videoLabel}>Video</Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  accessibilityLabel="Remove media"
+                  onPress={() => updateState({ media: state.media.filter((_, mediaIndex) => mediaIndex !== index) })}
+                  style={styles.removeMedia}
+                >
+                  <MaterialCommunityIcons name="close" size={15} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {state.media.length < 12 && (
+              <TouchableOpacity onPress={pickMedia} style={[styles.addMediaTile, { borderColor: Brand.teal }]}>
+                <MaterialCommunityIcons name="image-plus" size={27} color={Brand.teal} />
+                <Text style={[styles.addMediaText, { color: Brand.teal }]}>Add media</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
 
       <FormInput
         label="Additional Notes"
@@ -231,4 +308,15 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     marginBottom: 20,
   },
+  mediaHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  mediaHint: { fontSize: 11, marginTop: -5, lineHeight: 16 },
+  mediaCount: { fontSize: 12, fontWeight: '800' },
+  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  mediaTile: { width: 82, height: 82, borderRadius: 12, overflow: 'hidden', borderWidth: 1 },
+  mediaPreview: { width: '100%', height: '100%' },
+  videoPreview: { backgroundColor: '#0F172A', alignItems: 'center', justifyContent: 'center' },
+  videoLabel: { color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 },
+  removeMedia: { position: 'absolute', top: 5, right: 5, width: 23, height: 23, borderRadius: 12, backgroundColor: 'rgba(15,23,42,0.82)', alignItems: 'center', justifyContent: 'center' },
+  addMediaTile: { width: 82, height: 82, borderRadius: 12, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  addMediaText: { fontSize: 10, fontWeight: '700', marginTop: 4 },
 });

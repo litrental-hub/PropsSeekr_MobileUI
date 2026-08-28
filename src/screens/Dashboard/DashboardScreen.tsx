@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,9 @@ import {
   TouchableOpacity,
   TextInput,
   StatusBar,
-  ActivityIndicator,
   Alert,
+  Linking,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -23,209 +24,164 @@ import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { LogoLoader } from '../../components/common/LogoLoader';
 import { BottomSheet } from '../../components/BottomSheet';
-import { detectCurrentLocation, requestLocationPermissions } from '../../utils/location';
-import { searchProperties, getMyListings, uploadBulkTxtFile } from '../../api/property';
-import { getMatches } from '../../api/matches';
+import { detectCurrentLocation } from '../../utils/location';
+import {
+  MarketplaceListing,
+  MarketplaceRequirement,
+  searchProperties,
+  uploadBulkTxtFile,
+} from '../../api/property';
+import {
+  buildMarketplacePayload,
+  formatMarketplaceArea,
+  formatMarketplaceDistance,
+  formatMarketplaceFreshness,
+  formatMarketplacePrice,
+  MARKETPLACE_FILTERS,
+  MarketplaceFilter,
+} from '../../utils/marketplaceSearch';
 import { pick, types, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-
-const mapApiToProperty = (item: any, isRental: boolean, mock: any) => ({
-  id: item.id || item.propertyRequestId || item.listingId || Math.random().toString(),
-  title: item.title || item.propertyTitle || item.buildingName || `${item.bhk || '2BHK'} ${item.propertyType || item.category || 'Flat'}`,
-  subtitle: `${item.locality || item.city || 'Indore'} · ${item.category || item.propertyType || 'Residential'}`,
-  badge: item.status || 'AVAILABLE',
-  badgeType: item.category || 'Residential',
-  freshLabel: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Active Listing',
-  kiraya: item.price !== undefined ? (typeof item.price === 'number' ? `₹${item.price.toLocaleString('en-IN')}/mo` : `₹${item.price}/mo`) : (typeof item.askingPrice === 'number' ? `₹${item.askingPrice.toLocaleString('en-IN')}/mo` : (typeof item.expectedPrice === 'number' ? `₹${item.expectedPrice.toLocaleString('en-IN')}/mo` : '₹14,000/mo')),
-  kirayaBuySell: item.price !== undefined ? (typeof item.price === 'number' ? `₹${(item.price / 100000).toFixed(2)}L` : `₹${item.price}`) : (typeof item.askingPrice === 'number' ? `₹${(item.askingPrice / 100000).toFixed(2)}L` : (typeof item.expectedPrice === 'number' ? `₹${(item.expectedPrice / 100000).toFixed(2)}L` : '₹52L')),
-  area: item.builtUpSize ? `${item.builtUpSize} sqft` : (item.areaSqFt ? `${item.areaSqFt} sqft` : '950 sqft'),
-  available: item.availableFrom || 'Immediate',
-  features: Array.isArray(item.features) && item.features.length > 0 ? item.features : mock.features,
-  preferences: Array.isArray(item.preferences) && item.preferences.length > 0 ? item.preferences : mock.preferences,
-  locationLabel: item.locationLabel || `${item.locality || 'Nearby'} · PropSeekr Network`,
-  isNearby: item.isNearby !== undefined ? item.isNearby : true,
-  brokerInitials: item.brokerInitials || (item.brokerName || item.ownerName || 'VB').slice(0, 2).toUpperCase(),
-  brokerName: item.brokerName || item.ownerName || 'Verified Broker',
-  brokerSub: item.brokerSub || `${item.locality || item.city || 'PropSeekr'} · Network`,
-  unlockCost: item.unlockCost !== undefined ? item.unlockCost : 1,
-});
-
-// ── Mock Data ────────────────────────────────────────────────
-const BHK_FILTERS = ['Sab', '1BHK', '2BHK', '3BHK', 'Commercial', 'Plot', 'Villa'];
-
-const MOCK_PROPERTY = {
-  title: '2BHK Semi-Furnished Flat',
-  subtitle: 'Vijay Nagar, Indore · 2nd Floor · West facing',
-  badge: 'AVAILABLE',
-  badgeType: 'Residential',
-  freshLabel: 'Aaj dala',
-  kiraya: '₹14,000/mo',
-  kirayaBuySell: '₹52L',
-  area: '950 sqft',
-  available: 'Abhi se',
-  features: [
-    { icon: '🪑', label: 'Semi-furnished' },
-    { icon: '🚗', label: 'Parking' },
-    { icon: '🏢', label: '2nd floor' },
-    { icon: '🧭', label: 'West' },
-    { icon: '🛁', label: '2 bath' },
-    { icon: '⚡', label: '24hr power' },
-  ],
-  preferences: [
-    { label: 'Family preferred',        allowed: true },
-    { label: 'Working professionals',   allowed: true },
-    { label: 'No pets',                 allowed: false },
-    { label: 'No non-veg',              allowed: false },
-    { label: 'No bachelors',            allowed: false },
-  ],
-  locationLabel: '1.2 km · Vijay Nagar main road',
-  isNearby: true,
-  brokerInitials: 'RK',
-  brokerName: 'Rahul Kumar',
-  brokerSub: 'Vijay Nagar · PropSeekr',
-  unlockCost: 1,
-};
-
-const MOCK_REQUIREMENTS = [
-  { id: '1', title: '3BHK flat for family',    sub: 'Budget ₹50–70L · South Tukoganj', initials: 'AM', color: '#7C3AED' },
-  { id: '2', title: '2BHK rental for couple',  sub: 'Rent ₹12–18K · Vijay Nagar',     initials: 'SK', color: '#0A6E5E' },
-];
+type LocationStatus = 'idle' | 'requesting' | 'ready' | 'unavailable';
+const PAGE_SIZE = 20;
 
 // ── Main Screen ──────────────────────────────────────────────
 export default function DashboardScreen() {
   const navigation = useNavigation<Nav>();
-  const { creditsBalance, sectionType, setSectionType, location, setLocation, unreadNotifications } = useAppStore();
+  const { sectionType, setSectionType, location, setLocation, unreadNotifications } = useAppStore();
   const { t } = useTranslation();
   
   const theme = useAppTheme();
   const { colors, type, isDark } = theme;
 
-  useEffect(() => {
-    // Automatically detect GPS location and geocode city/locality on boot/login
-    (async () => {
-      const detected = await detectCurrentLocation(location.radiusKm || 5);
-      if (detected) {
-        setLocation(detected);
-      }
-    })();
-  }, []);
-
-  const handleChangeLocation = () => {
-    // Request permissions in parallel without blocking screen navigation
-    requestLocationPermissions();
-    navigation.navigate('Search' as any);
-  };
-
-  const [selectedBHK, setSelectedBHK] = useState('Sab');
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>(location ? 'ready' : 'idle');
+  const [selectedFilter, setSelectedFilter] = useState<MarketplaceFilter>('ALL');
   const [activeTab, setActiveTab] = useState<'Available' | 'Looking'>('Available');
   const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [isActionsVisible, setIsActionsVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [allProperties, setAllProperties] = useState<any[]>([]);
-  const [apiProperties, setApiProperties] = useState<any[]>([]);
-  const [availableCount, setAvailableCount] = useState<number | null>(null);
-  const [lookingCount, setLookingCount] = useState<number | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [listings, setListings] = useState<MarketplaceListing[]>([]);
+  const [requirements, setRequirements] = useState<MarketplaceRequirement[]>([]);
+  const [availableCount, setAvailableCount] = useState(0);
+  const [lookingCount, setLookingCount] = useState(0);
   const [searching, setSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const requestSequence = useRef(0);
 
   const isRental = sectionType === 'Rentals';
   const tabCounts = {
-    Available: availableCount ?? (isRental ? 84 : 156),
-    Looking: lookingCount ?? (isRental ? 43 : 72),
+    Available: availableCount,
+    Looking: lookingCount,
   };
 
-  const handleSearchChange = (text: string) => {
-    setSearchQuery(text);
-    if (!text.trim()) {
-      setApiProperties(allProperties);
-      return;
+  const resolveCurrentLocation = useCallback(async () => {
+    setLocationStatus('requesting');
+    const detected = await detectCurrentLocation(5);
+    if (detected) {
+      setLocation(detected);
+      setLocationStatus('ready');
+    } else {
+      setLocationStatus('unavailable');
     }
-    const q = text.toLowerCase().trim();
-    const filtered = allProperties.filter(p => {
-      const target = [p.title, p.subtitle, p.badge, p.badgeType, p.locationLabel, p.brokerName, p.kiraya, p.kirayaBuySell]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return target.includes(q);
-    });
-    setApiProperties(filtered);
-  };
-
-  const fetchProperties = async (query?: string) => {
-    try {
-      setSearching(true);
-      const payload = {
-        latitude: location.lat || 19.1136,
-        longitude: location.lng || 72.8697,
-        radiusKm: location.radiusKm || 10.0,
-        transactionType: isRental ? 'RENTAL' : 'BUY_SELL',
-        category: selectedBHK !== 'Sab' && selectedBHK !== 'Commercial' ? 'Residential' : (selectedBHK === 'Commercial' ? 'Commercial' : 'Residential'),
-        page: 1,
-        limit: 20,
-        query: query !== undefined ? query : searchQuery,
-      };
-
-      const results: any[] = [];
-      try {
-        const searchRes = await searchProperties(payload);
-        if (typeof searchRes.availableCount === 'number') setAvailableCount(searchRes.availableCount);
-        else if (typeof searchRes.activeCount === 'number') setAvailableCount(searchRes.activeCount);
-        else if (typeof searchRes.totalCount === 'number') setAvailableCount(searchRes.totalCount);
-
-        if (typeof searchRes.lookingCount === 'number') setLookingCount(searchRes.lookingCount);
-
-        const searchItems = searchRes.results || searchRes.data || (Array.isArray(searchRes) ? searchRes : []);
-        searchItems.forEach((it: any) => results.push(mapApiToProperty(it, isRental, MOCK_PROPERTY)));
-      } catch (err) {}
-
-      try {
-        const matchRes: any = await getMatches(1, 30, isRental ? 'RENTAL' : 'BUY_SELL');
-        const matchItems = matchRes.matches || matchRes.results || (Array.isArray(matchRes) ? matchRes : []);
-        matchItems.forEach((it: any) => results.push(mapApiToProperty(it, isRental, MOCK_PROPERTY)));
-      } catch (err) {}
-
-      try {
-        const myRes: any = await getMyListings();
-        const myItems = Array.isArray(myRes) ? myRes : (myRes?.data || myRes?.listings || []);
-        myItems.forEach((it: any) => results.push(mapApiToProperty(it, isRental, MOCK_PROPERTY)));
-      } catch (err) {}
-
-      // Deduplicate by title & locality
-      const seen = new Set();
-      const uniqueList = results.filter(item => {
-        const key = item.title + '|' + item.subtitle;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-
-      const listToUse = uniqueList.length > 0 ? uniqueList : [];
-      setAllProperties(listToUse);
-
-      const q = (query !== undefined ? query : searchQuery).toLowerCase().trim();
-      if (!q) {
-        setApiProperties(listToUse);
-      } else {
-        setApiProperties(listToUse.filter(p => {
-          const target = [p.title, p.subtitle, p.badge, p.badgeType, p.locationLabel, p.brokerName, p.kiraya, p.kirayaBuySell]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
-          return target.includes(q);
-        }));
-      }
-    } catch (err) {
-      console.log('Property search API error on home page:', err);
-      setAllProperties([]);
-      setApiProperties([]);
-    } finally {
-      setSearching(false);
-    }
-  };
+  }, [setLocation]);
 
   useEffect(() => {
-    fetchProperties();
-  }, [location.lat, location.lng, sectionType, selectedBHK]);
+    if (location) {
+      setLocationStatus('ready');
+      return;
+    }
+    if (locationStatus === 'idle') {
+      resolveCurrentLocation();
+    }
+  }, [location, locationStatus, resolveCurrentLocation]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleChangeLocation = () => navigation.navigate('Search', {});
+
+  const fetchProperties = useCallback(async (nextPage = 1, append = false, isRefresh = false) => {
+    if (!location) return;
+    const requestId = ++requestSequence.current;
+    try {
+      if (isRefresh) setRefreshing(true);
+      else if (append) setLoadingMore(true);
+      else setSearching(true);
+      setSearchError(null);
+
+      const response = await searchProperties(buildMarketplacePayload({
+        transactionType: isRental ? 'RENTAL' : 'BUY_SELL',
+        listingType: activeTab === 'Available' ? 'SUPPLY' : 'DEMAND',
+        location,
+        filter: selectedFilter,
+        searchQuery: debouncedSearch,
+        page: nextPage,
+        limit: PAGE_SIZE,
+      }));
+
+      if (requestId !== requestSequence.current) return;
+      setAvailableCount(response.availableCount);
+      setLookingCount(response.lookingCount);
+      setPage(nextPage);
+      setHasMore(nextPage * response.limit < response.totalCount);
+
+      if (activeTab === 'Available') {
+        setListings(previous => append ? mergeById(previous, response.results) : response.results);
+        setRequirements([]);
+      } else {
+        setRequirements(previous => append ? mergeById(previous, response.requirements) : response.requirements);
+        setListings([]);
+      }
+    } catch (error: any) {
+      if (requestId !== requestSequence.current) return;
+      setSearchError(error?.response?.data?.message || error?.message || 'Unable to load nearby properties.');
+      if (!append) {
+        setListings([]);
+        setRequirements([]);
+        setHasMore(false);
+      }
+    } finally {
+      if (requestId === requestSequence.current) {
+        setSearching(false);
+        setRefreshing(false);
+        setLoadingMore(false);
+      }
+    }
+  }, [activeTab, debouncedSearch, isRental, location, selectedFilter]);
+
+  useEffect(() => {
+    if (locationStatus === 'ready' && location) {
+      fetchProperties(1);
+    }
+  }, [fetchProperties, location, locationStatus]);
+
+  const visibleItems = activeTab === 'Available' ? listings : requirements;
+  const totalForTab = activeTab === 'Available' ? availableCount : lookingCount;
+
+  const refresh = () => fetchProperties(1, false, true);
+  const loadMore = () => {
+    if (!searching && !loadingMore && hasMore) fetchProperties(page + 1, true);
+  };
+
+  const selectedFilterLabel = MARKETPLACE_FILTERS.find(option => option.value === selectedFilter)?.label ?? 'All';
+
+  const openListingMatches = useCallback((listingId: string) => {
+    (navigation as any).navigate('Matches', { property: { listingId } });
+  }, [navigation]);
+
+  const openRequirementMatches = useCallback((requirementId: string) => {
+    (navigation as any).navigate('Matches', {
+      property: { type: 'Requirement', requirementId },
+    });
+  }, [navigation]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.navy }]}>
@@ -299,115 +255,144 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Location Bar ── */}
-        <TouchableOpacity 
-          activeOpacity={0.8} 
-          onPress={handleChangeLocation} 
-          style={[styles.locationBar, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}
-        >
-          <View style={styles.locationLeft}>
-            <Text style={styles.locationPin}>📍</Text>
-            <View>
-              <Text style={[styles.locationName, { color: colors.textPrimary }]}>{location.locality}, {location.city}</Text>
-              <Text style={[styles.locationSub, { color: colors.textDim }]}>
-                {location.radiusKm} km radius · {isRental ? '127 rental' : '228 buy/sell'} listings
-              </Text>
+        {location ? (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleChangeLocation}
+            accessibilityRole="button"
+            accessibilityLabel="Change search location"
+            style={[styles.locationBar, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}
+          >
+            <View style={styles.locationLeft}>
+              <Text style={styles.locationPin}>📍</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.locationName, { color: colors.textPrimary }]} numberOfLines={1}>
+                  {[location.locality, location.city].filter(Boolean).join(', ') || 'Selected location'}
+                </Text>
+                <Text style={[styles.locationSub, { color: colors.textDim }]}>
+                  {location.radiusKm} km radius · {totalForTab} {activeTab === 'Available' ? 'available' : 'looking'}
+                </Text>
+              </View>
             </View>
-          </View>
-          <Text style={styles.changeBtn}>{t('dashboard.change')}</Text>
-        </TouchableOpacity>
+            <Text style={styles.changeBtn}>{t('dashboard.change')}</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 100 }}
+          refreshControl={location ? (
+            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Brand.teal} />
+          ) : undefined}
         >
-          {/* ── Search + Filter ── */}
-          <View style={styles.searchRow}>
-            <View style={[styles.searchBox, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
-              <Text style={styles.searchIcon}>🔍</Text>
-              <TextInput
-                style={[styles.searchInput, { color: colors.textPrimary }]}
-                placeholder={t('dashboard.searchPlaceholder')}
-                placeholderTextColor={colors.textDim}
-                editable={true}
-                value={searchQuery}
-                onChangeText={handleSearchChange}
-                onSubmitEditing={() => fetchProperties()}
-                returnKeyType="search"
-              />
-            </View>
-            <TouchableOpacity 
-              style={styles.filterBtn} 
-              activeOpacity={0.85}
-              onPress={() => setIsFilterVisible(true)}
-            >
-              <LinearGradient
-                colors={[Brand.blue, Brand.teal]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.filterGrad}
-              >
-                <Text style={styles.filterIcon}>☰</Text>
-                <Text style={styles.filterText}>
-                  {selectedBHK !== 'Sab' ? selectedBHK : t('dashboard.filter')}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Tabs: Available / Looking ── */}
-          <View style={[styles.tabsRow, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}>
-            {(['Available', 'Looking'] as const).map(tab => {
-              const active = activeTab === tab;
-              return (
-                <TouchableOpacity
-                  key={tab}
-                  style={styles.tabItem}
-                  onPress={() => setActiveTab(tab)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.tabText, { color: active ? colors.textPrimary : colors.textDim }, active && { fontWeight: '700' }]}>
-                    {tab === 'Available' ? t('dashboard.available') : t('dashboard.looking')}{' '}
-                    <Text style={[styles.tabCount, active && { color: Brand.teal }]}>
-                      {tabCounts[tab]}
-                    </Text>
-                  </Text>
-                  {active && (
-                    <LinearGradient
-                      colors={[Brand.blue, Brand.teal]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.tabUnderline}
-                    />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* ── "AAPKE AAS-PAAS" Section ── */}
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>{t('dashboard.nearby')}</Text>
-            <Text style={[styles.sectionSub, { color: colors.textDim }]}>Vijay Nagar · 1.2 km</Text>
-          </View>
-
-          {/* ── Property Card ── */}
-          {searching ? (
-            <LogoLoader size={56} theme={type} text={`Loading ${isRental ? 'Rental' : 'Buy & Sell'} properties…`} />
-          ) : apiProperties.length > 0 ? (
-            apiProperties.map((prop, idx) => (
-              <View key={`searched-${idx}`} style={{ marginBottom: 12 }}>
-                <PropertyCard property={prop} isRental={isRental} theme={theme} />
-              </View>
-            ))
+          {!location ? (
+            <LocationGate
+              status={locationStatus}
+              onUseCurrentLocation={resolveCurrentLocation}
+              onChooseManually={handleChangeLocation}
+              onOpenSettings={() => Linking.openSettings()}
+              theme={theme}
+            />
           ) : (
-            <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-              <Text style={{ color: colors.textDim, fontSize: 15 }}>{t('dashboard.noMatches')} "{searchQuery}"</Text>
-            </View>
+            <>
+              <View style={styles.searchRow}>
+                <View style={[styles.searchBox, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+                  <MaterialCommunityIcons name="magnify" size={20} color={colors.textDim} />
+                  <TextInput
+                    style={[styles.searchInput, { color: colors.textPrimary }]}
+                    placeholder={t('dashboard.searchPlaceholder')}
+                    placeholderTextColor={colors.textDim}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    returnKeyType="search"
+                    accessibilityLabel="Search nearby property inventory"
+                  />
+                  {searchQuery ? (
+                    <TouchableOpacity onPress={() => setSearchQuery('')} accessibilityLabel="Clear search">
+                      <MaterialCommunityIcons name="close-circle" size={19} color={colors.textDim} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  style={styles.filterBtn}
+                  activeOpacity={0.85}
+                  onPress={() => setIsFilterVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Property filter: ${selectedFilterLabel}`}
+                >
+                  <LinearGradient colors={[Brand.blue, Brand.teal]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.filterGrad}>
+                    <MaterialCommunityIcons name="tune-variant" size={18} color="#FFFFFF" />
+                    <Text style={styles.filterText}>{selectedFilter === 'ALL' ? t('dashboard.filter') : selectedFilterLabel}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.tabsRow, { backgroundColor: colors.cardBg, borderBottomColor: Brand.blueBorder }]}>
+                {(['Available', 'Looking'] as const).map(tab => {
+                  const active = activeTab === tab;
+                  return (
+                    <TouchableOpacity key={tab} style={styles.tabItem} onPress={() => setActiveTab(tab)} activeOpacity={0.75}>
+                      <Text style={[styles.tabText, { color: active ? colors.textPrimary : colors.textDim }, active && { fontWeight: '700' }]}>
+                        {tab === 'Available' ? t('dashboard.available') : t('dashboard.looking')}{' '}
+                        <Text style={[styles.tabCount, active && { color: Brand.teal }]}>{tabCounts[tab]}</Text>
+                      </Text>
+                      {active ? <LinearGradient colors={[Brand.blue, Brand.teal]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.tabUnderline} /> : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>{t('dashboard.nearby')}</Text>
+                <Text style={[styles.sectionSub, { color: colors.textDim }]}>
+                  {location.radiusKm} km · {totalForTab} result{totalForTab === 1 ? '' : 's'}
+                </Text>
+              </View>
+
+              {searching ? (
+                <LogoLoader size={56} theme={type} text={`Loading nearby ${activeTab === 'Available' ? 'listings' : 'requirements'}…`} />
+              ) : searchError ? (
+                <StatusPanel icon="cloud-alert-outline" title="Could not load nearby properties" message={searchError} action="Retry" onAction={() => fetchProperties(1)} theme={theme} />
+              ) : visibleItems.length === 0 ? (
+                <StatusPanel
+                  icon="map-marker-off-outline"
+                  title="No nearby results"
+                  message={`No ${activeTab.toLowerCase()} ${isRental ? 'rental' : 'buy/sell'} records match this location and filter.`}
+                  action={selectedFilter !== 'ALL' || debouncedSearch ? 'Clear filters' : undefined}
+                  onAction={selectedFilter !== 'ALL' || debouncedSearch ? () => { setSelectedFilter('ALL'); setSearchQuery(''); } : undefined}
+                  theme={theme}
+                />
+              ) : (
+                <>
+                  {activeTab === 'Available'
+                    ? listings.map(item => (
+                      <PropertyCard
+                        key={`listing-${item.id}`}
+                        property={item}
+                        isRental={isRental}
+                        onViewMatches={() => openListingMatches(item.id)}
+                        theme={theme}
+                      />
+                    ))
+                    : requirements.map(item => (
+                      <RequirementCard
+                        key={`requirement-${item.id}`}
+                        requirement={item}
+                        isRental={isRental}
+                        onViewMatches={() => openRequirementMatches(item.id)}
+                        theme={theme}
+                      />
+                    ))}
+                  {hasMore ? (
+                    <TouchableOpacity style={[styles.loadMoreButton, { borderColor: Brand.blueBorder }]} onPress={loadMore} disabled={loadingMore}>
+                      <Text style={[styles.loadMoreText, { color: Brand.teal }]}>{loadingMore ? 'Loading…' : 'Load more'}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </>
+              )}
+              <View style={{ height: 40 }} />
+            </>
           )}
-
-
-          <View style={{ height: 40 }} />
         </ScrollView>
 
         {/* ── FAB (+ button) ── */}
@@ -515,13 +500,13 @@ export default function DashboardScreen() {
           <View style={styles.filterSheetContent}>
             <Text style={[styles.filterSheetTitle, { color: colors.textPrimary }]}>Property Type</Text>
             <View style={styles.filterSheetOptions}>
-              {BHK_FILTERS.map(f => {
-                const active = selectedBHK === f;
+              {MARKETPLACE_FILTERS.map(option => {
+                const active = selectedFilter === option.value;
                 return (
                   <TouchableOpacity
-                    key={f}
+                    key={option.value}
                     onPress={() => {
-                      setSelectedBHK(f);
+                      setSelectedFilter(option.value);
                       setIsFilterVisible(false);
                     }}
                     activeOpacity={0.75}
@@ -534,11 +519,11 @@ export default function DashboardScreen() {
                         end={{ x: 1, y: 0 }}
                         style={styles.bhkChipActive}
                       >
-                        <Text style={[styles.bhkChipTextActive, { color: '#FFFFFF' }]}>{f}</Text>
+                        <Text style={[styles.bhkChipTextActive, { color: '#FFFFFF' }]}>{option.label}</Text>
                       </LinearGradient>
                     ) : (
                       <View style={[styles.bhkChip, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
-                        <Text style={[styles.bhkChipText, { color: colors.textSecondary }]}>{f}</Text>
+                        <Text style={[styles.bhkChipText, { color: colors.textSecondary }]}>{option.label}</Text>
                       </View>
                     )}
                   </TouchableOpacity>
@@ -556,144 +541,229 @@ export default function DashboardScreen() {
 function PropertyCard({
   property,
   isRental,
+  onViewMatches,
   theme,
 }: {
-  property: any;
+  property: MarketplaceListing;
   isRental: boolean;
+  onViewMatches: () => void;
   theme: ReturnType<typeof useAppTheme>;
 }) {
   const { colors } = theme;
+  const price = formatMarketplacePrice(property.price, isRental);
+  const area = formatMarketplaceArea(property.builtUpSize);
+  const distance = formatMarketplaceDistance(property.distanceKm);
+  const freshness = formatMarketplaceFreshness(property.lastRefreshedAt || property.createdAt);
+  const stats = [
+    price ? { label: isRental ? 'RENT' : 'PRICE', value: price } : null,
+    area ? { label: 'AREA', value: area } : null,
+    distance ? { label: 'DISTANCE', value: distance } : null,
+  ].filter((item): item is { label: string; value: string } => Boolean(item));
+
   return (
     <View style={[styles.propCard, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
-      {/* Top Row */}
       <View style={styles.propTopRow}>
         <View style={styles.propBadgeRow}>
-          <LinearGradient
-            colors={['rgba(16,185,129,0.2)', 'rgba(16,185,129,0.1)']}
-            style={styles.availBadge}
-          >
-            <Text style={styles.availBadgeText}>{property.badge}</Text>
-          </LinearGradient>
-          <Text style={[styles.propType, { color: colors.textSecondary }]}>{property.badgeType}</Text>
-        </View>
-        <View style={styles.freshRow}>
-          <View style={styles.freshDot} />
-          <Text style={[styles.freshText, { color: colors.textDim }]}>{property.freshLabel}</Text>
-        </View>
-      </View>
-
-      {/* Title */}
-      <Text style={[styles.propTitle, { color: colors.textPrimary }]}>{property.title}</Text>
-      <Text style={[styles.propSubtitle, { color: colors.textSecondary }]}>{property.subtitle}</Text>
-
-      {/* Stats Row */}
-      <View style={[styles.statsRow, { borderColor: Brand.blueBorder, backgroundColor: colors.inputBg }]}>
-        {[
-          { label: isRental ? 'KIRAYA' : 'PRICE',  value: isRental ? property.kiraya : property.kirayaBuySell },
-          { label: 'AREA',      value: property.area,      center: true },
-          { label: 'AVAILABLE', value: property.available },
-        ].map(({ label, value, center }, i) => (
-          <View key={i} style={[styles.statCol, center && { borderLeftWidth: 1, borderRightWidth: 1, borderColor: Brand.blueBorder }]}>
-            <Text style={[styles.statLabel, { color: colors.textDim }]}>{label}</Text>
-            <Text style={[styles.statValue, { color: colors.textPrimary }]}>{value}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Features */}
-      <View style={styles.featureRow}>
-        {(property.features || []).map((f: any, i: number) => (
-          <View key={i} style={[styles.featureChip, { backgroundColor: colors.cardBgLight, borderColor: colors.borderFaint }]}>
-            <Text style={styles.featureIcon}>{f.icon}</Text>
-            <Text style={[styles.featureLabel, { color: colors.textSecondary }]}>{f.label}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Owner Preferences */}
-      <Text style={[styles.prefTitle, { color: colors.textDim }]}>OWNER PREFERENCES</Text>
-      <View style={styles.prefRow}>
-        {(property.preferences || []).map((p: any, i: number) => (
-          <View
-            key={i}
-            style={[
-              styles.prefChip,
-              { backgroundColor: p.allowed ? colors.successFaint : colors.errorFaint },
-            ]}
-          >
-            <Text style={[styles.prefChipText, { color: p.allowed ? Brand.teal : colors.errorText }]}>
-              {p.allowed ? '✓' : '✕'} {p.label}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Location Row */}
-      <View style={[styles.propLocRow, { borderTopColor: Brand.blueBorder }]}>
-        <Text style={[styles.propLocText, { color: colors.textSecondary }]}>📍 {property.locationLabel}</Text>
-        {property.isNearby && (
-          <View style={[styles.nearbyBadge, { backgroundColor: 'rgba(16,185,129,0.12)' }]}>
-            <Text style={styles.nearbyText}>Aapke paas hai</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Broker + Actions */}
-      <View style={styles.propFooter}>
-        <View style={styles.brokerRow}>
-          <LinearGradient
-            colors={[Brand.blue, Brand.teal]}
-            style={styles.brokerAvatar}
-          >
-            <Text style={styles.brokerInitials}>{property.brokerInitials}</Text>
-          </LinearGradient>
-          <View>
-            <Text style={[styles.brokerName, { color: colors.textPrimary }]}>{property.brokerName}</Text>
-            <Text style={[styles.brokerSub, { color: colors.textDim }]}>{property.brokerSub}</Text>
-          </View>
-        </View>
-
-        <View style={styles.propActions}>
-          <TouchableOpacity style={[styles.meraClientBtn, { borderColor: Brand.blueBorder, backgroundColor: colors.inputBg }]} activeOpacity={0.8}>
-            <Text style={[styles.meraClientText, { color: colors.textSecondary }]}>+ Mera client hai</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.85}>
-            <LinearGradient
-              colors={[Brand.blue, Brand.teal]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.unlockBtn}
-            >
-              <Text style={styles.unlockText}>Unlock ({property.unlockCost}cr)</Text>
+          {property.status ? (
+            <LinearGradient colors={['rgba(16,185,129,0.2)', 'rgba(16,185,129,0.1)']} style={styles.availBadge}>
+              <Text style={styles.availBadgeText}>{property.status.toUpperCase()}</Text>
             </LinearGradient>
-          </TouchableOpacity>
+          ) : null}
+          {property.category || property.propertyType ? (
+            <Text style={[styles.propType, { color: colors.textSecondary }]}>{property.category || property.propertyType}</Text>
+          ) : null}
         </View>
+        {freshness ? <Text style={[styles.freshText, { color: colors.textDim }]}>{freshness}</Text> : null}
       </View>
+
+      <Text style={[styles.propTitle, { color: colors.textPrimary }]}>{property.title}</Text>
+      {property.subtitle ? <Text style={[styles.propSubtitle, { color: colors.textSecondary }]}>{property.subtitle}</Text> : null}
+      {stats.length ? <CardStats stats={stats} theme={theme} /> : null}
+
+      {property.features.length ? (
+        <View style={styles.featureRow}>
+          {property.features.map(feature => (
+            <View key={`${feature.icon}-${feature.label}`} style={[styles.featureChip, { backgroundColor: colors.cardBgLight, borderColor: colors.borderFaint }]}>
+              <Text style={styles.featureIcon}>{feature.icon}</Text>
+              <Text style={[styles.featureLabel, { color: colors.textSecondary }]}>{feature.label}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {property.locationLabel ? (
+        <View style={[styles.propLocRow, { borderTopColor: Brand.blueBorder }]}>
+          <Text style={[styles.propLocText, { color: colors.textSecondary }]}>📍 {property.locationLabel}</Text>
+          {property.isNearby ? (
+          <View style={[styles.nearbyBadge, { backgroundColor: 'rgba(16,185,129,0.12)' }]}>
+              <Text style={styles.nearbyText}>Within search radius</Text>
+          </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      <MatchUnlockAction onPress={onViewMatches} theme={theme} />
     </View>
   );
 }
 
-// ── Requirement Row ─────────────────────────────────────────
-function RequirementRow({
-  item,
-  theme,
-}: {
-  item: { id: string; title: string; sub: string; initials: string; color: string };
+function RequirementCard({ requirement, isRental, onViewMatches, theme }: {
+  requirement: MarketplaceRequirement;
+  isRental: boolean;
+  onViewMatches: () => void;
+  theme: ReturnType<typeof useAppTheme>;
+}) {
+  const { colors } = theme;
+  const budget = formatMarketplacePrice(requirement.budget, isRental);
+  const area = formatMarketplaceArea(requirement.requiredSize);
+  const distance = formatMarketplaceDistance(requirement.distanceKm);
+  const freshness = formatMarketplaceFreshness(requirement.lastRefreshedAt || requirement.createdAt);
+  const stats = [
+    budget ? { label: 'BUDGET', value: budget } : null,
+    area ? { label: 'AREA', value: area } : null,
+    distance ? { label: 'DISTANCE', value: distance } : null,
+  ].filter((item): item is { label: string; value: string } => Boolean(item));
+  const preferences = [requirement.furnishingPreference, requirement.facingPreference].filter(Boolean) as string[];
+
+  return (
+    <View style={[styles.propCard, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+      <View style={styles.propTopRow}>
+        <View style={styles.propBadgeRow}>
+          {requirement.status ? (
+            <View style={[styles.availBadge, { backgroundColor: 'rgba(37,99,235,0.12)' }]}>
+              <Text style={[styles.availBadgeText, { color: Brand.blue }]}>{requirement.status.toUpperCase()}</Text>
+            </View>
+          ) : null}
+          {requirement.propertyType ? <Text style={[styles.propType, { color: colors.textSecondary }]}>{requirement.propertyType}</Text> : null}
+        </View>
+        {freshness ? <Text style={[styles.freshText, { color: colors.textDim }]}>{freshness}</Text> : null}
+      </View>
+      <Text style={[styles.propTitle, { color: colors.textPrimary }]}>{requirement.title}</Text>
+      {requirement.sub ? <Text style={[styles.propSubtitle, { color: colors.textSecondary }]}>{requirement.sub}</Text> : null}
+      {stats.length ? <CardStats stats={stats} theme={theme} /> : null}
+      {preferences.length ? (
+        <View style={styles.featureRow}>
+          {preferences.map(preference => (
+            <View key={preference} style={[styles.featureChip, { backgroundColor: colors.cardBgLight, borderColor: colors.borderFaint }]}>
+              <Text style={[styles.featureLabel, { color: colors.textSecondary }]}>{preference}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <MatchUnlockAction onPress={onViewMatches} theme={theme} />
+    </View>
+  );
+}
+
+function MatchUnlockAction({ onPress, theme }: {
+  onPress: () => void;
   theme: ReturnType<typeof useAppTheme>;
 }) {
   const { colors } = theme;
   return (
-    <TouchableOpacity style={[styles.reqRow, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]} activeOpacity={0.8}>
-      <View style={[styles.reqAvatar, { backgroundColor: item.color }]}>
-        <Text style={styles.reqInitials}>{item.initials}</Text>
+    <View style={[styles.matchUnlockFooter, { borderTopColor: Brand.blueBorder }]}>
+      <View style={styles.contactProtectedRow}>
+        <MaterialCommunityIcons name="shield-lock-outline" size={18} color={colors.textDim} />
+        <Text style={[styles.contactProtectedText, { color: colors.textDim }]}>Broker details protected</Text>
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.reqTitle, { color: colors.textPrimary }]}>{item.title}</Text>
-        <Text style={[styles.reqSub, { color: colors.textDim }]}>{item.sub}</Text>
-      </View>
-      <Text style={[styles.reqArrow, { color: colors.textDim }]}>→</Text>
-    </TouchableOpacity>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="View matches to unlock broker contact"
+        activeOpacity={0.8}
+        onPress={onPress}
+        style={styles.viewMatchesButton}
+      >
+        <LinearGradient
+          colors={[Brand.blue, Brand.teal]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.viewMatchesGradient}
+        >
+          <Text style={styles.viewMatchesText}>View matches to unlock contact</Text>
+          <MaterialCommunityIcons name="chevron-right" size={18} color="#FFFFFF" />
+        </LinearGradient>
+      </TouchableOpacity>
+    </View>
   );
+}
+
+function CardStats({ stats, theme }: {
+  stats: Array<{ label: string; value: string }>;
+  theme: ReturnType<typeof useAppTheme>;
+}) {
+  const { colors } = theme;
+  return (
+    <View style={[styles.statsRow, { borderColor: Brand.blueBorder, backgroundColor: colors.inputBg }]}>
+      {stats.map((stat, index) => (
+        <View key={stat.label} style={[styles.statCol, index > 0 && { borderLeftWidth: 1, borderColor: Brand.blueBorder }]}>
+          <Text style={[styles.statLabel, { color: colors.textDim }]}>{stat.label}</Text>
+          <Text style={[styles.statValue, { color: colors.textPrimary }]} numberOfLines={1}>{stat.value}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function LocationGate({ status, onUseCurrentLocation, onChooseManually, onOpenSettings, theme }: {
+  status: LocationStatus;
+  onUseCurrentLocation: () => void;
+  onChooseManually: () => void;
+  onOpenSettings: () => void;
+  theme: ReturnType<typeof useAppTheme>;
+}) {
+  const { colors } = theme;
+  const requesting = status === 'requesting';
+  return (
+    <View style={[styles.locationGate, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+      <View style={styles.locationGateIcon}>
+        <MaterialCommunityIcons name="map-marker-radius-outline" size={38} color={Brand.teal} />
+      </View>
+      <Text style={[styles.locationGateTitle, { color: colors.textPrimary }]}>Find properties within 5 km</Text>
+      <Text style={[styles.locationGateMessage, { color: colors.textSecondary }]}>
+        Allow location access to detect your coordinates and show real nearby listings and requirements.
+      </Text>
+      <TouchableOpacity style={styles.primaryGateButton} onPress={onUseCurrentLocation} disabled={requesting}>
+        <Text style={styles.primaryGateButtonText}>{requesting ? 'Detecting location…' : 'Use my current location'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[styles.secondaryGateButton, { borderColor: Brand.blueBorder }]} onPress={onChooseManually}>
+        <Text style={[styles.secondaryGateButtonText, { color: colors.textPrimary }]}>Choose on Google Map</Text>
+      </TouchableOpacity>
+      {status === 'unavailable' ? (
+        <TouchableOpacity onPress={onOpenSettings} style={styles.settingsLink}>
+          <Text style={{ color: Brand.teal, fontWeight: '700' }}>Open app settings</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function StatusPanel({ icon, title, message, action, onAction, theme }: {
+  icon: string;
+  title: string;
+  message: string;
+  action?: string;
+  onAction?: () => void;
+  theme: ReturnType<typeof useAppTheme>;
+}) {
+  const { colors } = theme;
+  return (
+    <View style={styles.statusPanel}>
+      <MaterialCommunityIcons name={icon} size={34} color={colors.textDim} />
+      <Text style={[styles.statusPanelTitle, { color: colors.textPrimary }]}>{title}</Text>
+      <Text style={[styles.statusPanelMessage, { color: colors.textDim }]}>{message}</Text>
+      {action && onAction ? (
+        <TouchableOpacity onPress={onAction} style={[styles.statusAction, { borderColor: Brand.blueBorder }]}>
+          <Text style={{ color: Brand.teal, fontWeight: '700' }}>{action}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function mergeById<T extends { id: string }>(existing: T[], incoming: T[]): T[] {
+  const merged = new Map(existing.map(item => [item.id, item]));
+  incoming.forEach(item => merged.set(item.id, item));
+  return Array.from(merged.values());
 }
 
 // ── Styles ──────────────────────────────────────────────────
@@ -751,7 +821,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10,
     borderBottomWidth: 1,
   },
-  locationLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  locationLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 12 },
   locationPin:  { fontSize: 14 },
   locationName: { fontSize: 14, fontWeight: '700' },
   locationSub:  { fontSize: 11, marginTop: 1 },
@@ -820,8 +890,7 @@ const styles = StyleSheet.create({
   freshText:    { fontSize: 11 },
 
   propTitle:    { fontSize: 17, fontWeight: '800', letterSpacing: -0.3, marginBottom: 3 },
-  propSubtitle: { fontSize: 12, marginBottom: 14 },
-
+  propSubtitle: { fontSize: 12, marginBottom: 10 },
   // Stats
   statsRow: {
     flexDirection: 'row', borderWidth: 1,
@@ -857,22 +926,16 @@ const styles = StyleSheet.create({
   nearbyBadge:  { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   nearbyText:   { fontSize: 11, color: '#10B981', fontWeight: '600' },
 
-  // Broker footer
-  propFooter:    {},
-  brokerRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  brokerAvatar:  { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  brokerInitials:{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' },
-  brokerName:    { fontSize: 13, fontWeight: '700' },
-  brokerSub:     { fontSize: 11 },
-
-  propActions:   { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  meraClientBtn: {
-    flex: 1, borderWidth: 1.5,
-    borderRadius: 10, paddingVertical: 9, alignItems: 'center',
+  // Protected broker contact action
+  matchUnlockFooter: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, gap: 10 },
+  contactProtectedRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  contactProtectedText: { fontSize: 11, fontWeight: '600' },
+  viewMatchesButton: { borderRadius: 10, overflow: 'hidden' },
+  viewMatchesGradient: {
+    minHeight: 42, paddingHorizontal: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
   },
-  meraClientText:{ fontSize: 11, fontWeight: '700' },
-  unlockBtn:     { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 10 },
-  unlockText:    { fontSize: 11, fontWeight: '800', color: '#FFFFFF' },
+  viewMatchesText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
 
   // Requirement rows
   reqRow: {
@@ -916,6 +979,57 @@ const styles = StyleSheet.create({
   filterSheetOptionBtn: {
     marginBottom: 4,
   },
+
+  locationGate: {
+    marginHorizontal: 20,
+    marginTop: 36,
+    padding: 24,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  locationGateIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    marginBottom: 18,
+  },
+  locationGateTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
+  locationGateMessage: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginBottom: 22 },
+  primaryGateButton: {
+    width: '100%',
+    borderRadius: 12,
+    backgroundColor: Brand.teal,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  primaryGateButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+  secondaryGateButton: {
+    width: '100%',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  secondaryGateButtonText: { fontSize: 14, fontWeight: '700' },
+  settingsLink: { paddingHorizontal: 12, paddingTop: 18, paddingBottom: 4 },
+  statusPanel: { alignItems: 'center', paddingHorizontal: 30, paddingVertical: 34 },
+  statusPanelTitle: { fontSize: 16, fontWeight: '800', marginTop: 10 },
+  statusPanelMessage: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 5 },
+  statusAction: { marginTop: 15, borderWidth: 1, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 9 },
+  loadMoreButton: {
+    marginHorizontal: 16,
+    marginTop: 2,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+  },
+  loadMoreText: { fontSize: 13, fontWeight: '800' },
 
   // Quick Action Modal Styles
   actionCardRow: {

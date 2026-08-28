@@ -5,7 +5,6 @@ import { useAddPropertyForm } from '../AddPropertyContext';
 import { Stepper } from '../../../../components/forms/Stepper';
 import { ChipSelector } from '../../../../components/forms/ChipSelector';
 import { FormInput } from '../../../../components/forms/FormInput';
-import { Toggle } from '../../../../components/forms/Toggle';
 import { useAppTheme, Brand } from '../../../../theme/useAppTheme';
 import { HouseDetailsSection } from './HouseDetailsSection';
 import { PlotDetailsSection } from './PlotDetailsSection';

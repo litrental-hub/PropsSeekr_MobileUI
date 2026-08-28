@@ -16,7 +16,7 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useTranslation } from 'react-i18next';
 
@@ -24,7 +24,7 @@ import { BottomTabParamList } from '../../navigation/BottomTabNavigator';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
-import { FontSize, FontWeight, Card, Shadow, Spacing } from '../../constants/theme';
+import { FontSize, FontWeight, Card } from '../../constants/theme';
 import { getMatches, confirmMatch, rejectMatch, MatchDTO, RejectReasonCode } from '../../api/matches';
 import { useAuthStore } from '../../store/authStore';
 import { useAppStore } from '../../store/appStore';
@@ -32,6 +32,7 @@ import { formatPrice } from '../../utils/formatters';
 import { resolveMatchSourceIds } from '../../utils/matchFilters';
 import { LogoLoader } from '../../components/common/LogoLoader';
 import { refreshWallet } from '../../services/walletSync';
+import { getMatchPrimaryAction } from '../../utils/matchState';
 
 // ── Types ─────────────────────────────────────────────────────
 interface MatchProperty {
@@ -121,7 +122,7 @@ const parseNumberSafe = (val: any): number => {
 
 function mapDTOToMatch(dto: MatchDTO, defaultTxType?: string): Match {
   const raw = dto || {};
-  const score = parseNumberSafe(raw.matchScore ?? raw.score ?? raw.matchPercentage ?? 100) || 100;
+  const score = parseNumberSafe(raw.matchScore ?? raw.score ?? raw.matchPercentage ?? 0);
 
   let matchQuality = raw.quality || raw.matchQuality || raw.qualityLabel || '';
   if (!matchQuality || typeof matchQuality !== 'string' || !matchQuality.trim()) {
@@ -227,6 +228,7 @@ export default function MatchesScreen() {
   const theme = useAppTheme();
   const { colors, type, isDark } = theme;
   const { t } = useTranslation();
+  const navigation = useNavigation<any>();
 
   const { sectionType } = useAppStore();
   const transactionType = sectionType === 'Rentals' ? 'RENTAL' : 'BUY_SELL';
@@ -395,7 +397,13 @@ export default function MatchesScreen() {
         connectionRequestId: res.connectionRequestId ?? current.connectionRequestId,
         connectionRequestStatus: res.connectionRequestStatus ?? current.connectionRequestStatus,
       } : current);
-      setActionMessage(res.message || (res.isRevealed ? 'Connection accepted and contacts unlocked.' : 'Request sent.'));
+      setActionMessage(
+        res.isRevealed
+          ? 'Connection accepted. The broker contact is now unlocked.'
+          : res.success
+            ? 'Unlock requested. Waiting for the other broker to accept. Contact details remain protected, and no token is charged until both brokers agree.'
+            : res.message || 'Could not process this connection request.',
+      );
       setActionMode('result');
     } catch (err: any) {
       setActionMessage(err?.response?.data?.message || err?.message || 'Could not process this connection request.');
@@ -443,13 +451,9 @@ export default function MatchesScreen() {
   const handleReject = useCallback((match: Match) => openConnectionAction(match, 'reject'), [openConnectionAction]);
 
   // ── More Details handler ─────────────────────────────────────
-  const handleMoreDetails = useCallback((_match: Match) => {
-    Alert.alert(
-      '🏗️ Coming Soon',
-      'Detailed seller / owner info, photos & videos will be available once the API is live.',
-      [{ text: 'Got it' }],
-    );
-  }, []);
+  const handleMoreDetails = useCallback((match: Match) => {
+    navigation.navigate('MatchDetail', { matchId: String(match.matchId) });
+  }, [navigation]);
 
   // ── Render helpers ───────────────────────────────────────────
   const renderFooter = () => {
@@ -680,7 +684,7 @@ export default function MatchesScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScreenHeader colors={colors} type={type} pagination={pagination} />
+        <ScreenHeader colors={colors} type={type} pagination={pagination} selectedProperty={selectedProperty} navigation={navigation} />
 
         <FlatList
           data={filteredMatches}
@@ -925,6 +929,7 @@ function MatchCard({ match, colors, isRevealing, onUnlock, onAccept, onReject, o
   const otherBroker = match.property || match.buyer;
   const matchTitle = `${match.property.config} ${match.property.type}`.trim();
   const matchPrice = match.property.price;
+  const primaryAction = getMatchPrimaryAction(match);
 
   return (
     <View style={[styles.compactMatchCard, { backgroundColor: colors.cardBg, borderColor: colors.borderFaint }]}>
@@ -958,7 +963,7 @@ function MatchCard({ match, colors, isRevealing, onUnlock, onAccept, onReject, o
           <Text style={[styles.compactActionText, { color: colors.textSecondary }]}>View Details</Text>
         </TouchableOpacity>
 
-        {match.isRevealed && match.unlockedContact ? (
+        {primaryAction === 'unlocked' && match.unlockedContact ? (
           <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, backgroundColor: 'rgba(16,185,129,0.12)', borderColor: 'rgba(16,185,129,0.3)', flexDirection: 'row', gap: 6 }]} onPress={() => Linking.openURL(`tel:${match.unlockedContact?.ownerMobile}`)}>
             <MaterialCommunityIcons name="phone" size={14} color={Brand.teal} />
             <Text style={[styles.compactActionText, { color: Brand.teal }]}>Call Broker</Text>
@@ -967,19 +972,33 @@ function MatchCard({ match, colors, isRevealing, onUnlock, onAccept, onReject, o
           <View style={[styles.compactActionBtn, { flex: 1, backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }]}>
             <ActivityIndicator size="small" color={Brand.teal} />
           </View>
-        ) : match.connectionRequestStatus === 'credit_required' ? (
+        ) : primaryAction === 'credit_required' ? (
           <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, backgroundColor: colors.warningFaint, borderColor: colors.warningText }]} onPress={onUnlock}>
             <Text style={[styles.compactActionText, { color: colors.warningText }]}>Retry Connection</Text>
           </TouchableOpacity>
-        ) : match.state === 'confirmed' ? (
-          <View style={[styles.compactActionBtn, { flex: 1, backgroundColor: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.3)' }]}>
-            <ActivityIndicator size="small" color={Brand.teal} />
-          </View>
-        ) : match.state === 'pending_confirmation' && match.currentBrokerConfirmed ? (
-          <View style={[styles.compactActionBtn, { flex: 1, borderColor: colors.borderFaint }]}>
-            <Text style={[styles.compactActionText, { color: colors.warningText }]}>Pending</Text>
-          </View>
-        ) : match.incomingConnectionRequest || (match.state === 'pending_confirmation' && !match.currentBrokerConfirmed) ? (
+        ) : primaryAction === 'waiting' ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Unlock requested. Waiting for the other broker to accept."
+            accessibilityState={{ disabled: true, busy: true }}
+            disabled
+            activeOpacity={1}
+            style={[
+              styles.waitingActionButton,
+              { backgroundColor: colors.warningFaint, borderColor: colors.warningText },
+            ]}
+          >
+            <View style={[styles.waitingActionIcon, { backgroundColor: colors.warningText }]}>
+              <MaterialCommunityIcons name="clock-check-outline" size={17} color="#FFFFFF" />
+            </View>
+            <View style={styles.waitingActionCopy}>
+              <Text style={[styles.waitingActionTitle, { color: colors.warningText }]}>Unlock requested</Text>
+              <Text style={[styles.waitingActionSubtitle, { color: colors.textSecondary }]} numberOfLines={2}>
+                Waiting for other broker to accept
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ) : primaryAction === 'accept' ? (
           <View style={styles.incomingActionWrap}>
             <TouchableOpacity style={[styles.compactActionBtn, { flex: 1, borderColor: colors.errorText }]} onPress={onReject}>
               <Text style={[styles.compactActionText, { color: colors.errorText }]}>Reject</Text>
@@ -1378,6 +1397,8 @@ const styles = StyleSheet.create({
   retryText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: '#FFFFFF' },
 
   propertyCard: { borderRadius: 16, borderWidth: 1, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  statsCard: { minWidth: 84, alignItems: 'center', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  statsLabel: { fontSize: 10, color: '#64748B', marginTop: 2 },
   cardInnerLayout: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   cardImageContainer: { width: '32%', aspectRatio: 0.85 },
   cardImage: { width: '100%', height: '100%', borderRadius: 12, backgroundColor: '#E5E7EB' },
@@ -1419,6 +1440,27 @@ const styles = StyleSheet.create({
   incomingActionWrap: { flex: 1.5, flexDirection: 'row', gap: 6 },
   compactActionBtn: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   compactActionText: { fontSize: 12, fontWeight: '700' },
+  waitingActionButton: {
+    flex: 1.65,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 8,
+  },
+  waitingActionIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waitingActionCopy: { flex: 1 },
+  waitingActionTitle: { fontSize: 12, fontWeight: '800' },
+  waitingActionSubtitle: { fontSize: 10, fontWeight: '600', lineHeight: 13, marginTop: 1 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(2,6,23,0.68)', justifyContent: 'center', padding: 20 },
   actionModal: { borderWidth: 1, borderRadius: 20, padding: 20, maxHeight: '88%', shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 10 },
   modalTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },

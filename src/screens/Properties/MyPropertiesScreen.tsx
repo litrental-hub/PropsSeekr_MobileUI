@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Image,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -19,16 +20,17 @@ import { getMyRequirements } from '../../api/requirements';
 import { getMyListings, PropertyListingItem } from '../../api/property';
 
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
-import { Radius, Shadow, FontSize, FontWeight, Card, Spacing } from '../../constants/theme';
+import { Shadow, FontSize, Card, Spacing } from '../../constants/theme';
 import { RootStackParamList } from '../../navigation/RootNavigator';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { formatPrice } from '../../utils/formatters';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../store/appStore';
 import { BottomSheet } from '../../components/BottomSheet';
-import { inventoryItemMatchesSearch } from '../../utils/inventorySearch';
+import { appendUniqueInventoryItems, inventoryItemMatchesSearch } from '../../utils/inventorySearch';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+const PAGE_SIZE = 20;
 
 export default function MyPropertiesScreen() {
   const navigation = useNavigation<Nav>();
@@ -42,6 +44,12 @@ export default function MyPropertiesScreen() {
   const [properties, setProperties] = useState<PropertyListingItem[]>([]);
   const [loadingReq, setLoadingReq] = useState(false);
   const [loadingProp, setLoadingProp] = useState(false);
+  const [loadingMoreReq, setLoadingMoreReq] = useState(false);
+  const [loadingMoreProp, setLoadingMoreProp] = useState(false);
+  const [requirementTotal, setRequirementTotal] = useState(0);
+  const [propertyTotal, setPropertyTotal] = useState(0);
+  const [requirementPage, setRequirementPage] = useState(1);
+  const [propertyPage, setPropertyPage] = useState(1);
   const [isActionsVisible, setIsActionsVisible] = useState(false);
   const [propertyError, setPropertyError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,9 +77,11 @@ export default function MyPropertiesScreen() {
       setLoadingProp(true);
       setPropertyError(null);
       setProperties([]);
-      const res = await getMyListings(1, 20, { transactionType });
+      const res = await getMyListings(1, PAGE_SIZE, { transactionType });
       if (requestId === propertyRequestId.current) {
         setProperties(res.data ?? []);
+        setPropertyTotal(res.totalCount ?? res.data?.length ?? 0);
+        setPropertyPage(1);
       }
     } catch (err) {
       console.log('Error fetching properties:', err);
@@ -90,9 +100,12 @@ export default function MyPropertiesScreen() {
     try {
       setLoadingReq(true);
       setRequirements([]);
-      const data = await getMyRequirements(1, 20, transactionType);
+      const data = await getMyRequirements(1, PAGE_SIZE, transactionType);
       if (requestId === requirementRequestId.current) {
-        setRequirements(data?.data || data || []);
+        const items = data?.data || data || [];
+        setRequirements(items);
+        setRequirementTotal(data?.totalCount ?? items.length);
+        setRequirementPage(1);
       }
     } catch (err) {
       console.log('Error fetching requirements:', err);
@@ -102,6 +115,48 @@ export default function MyPropertiesScreen() {
       }
     }
   }, [transactionType]);
+
+  const loadMoreProperties = React.useCallback(async () => {
+    if (loadingProp || loadingMoreProp || properties.length >= propertyTotal) return;
+    const nextPage = propertyPage + 1;
+    const requestId = propertyRequestId.current;
+    try {
+      setLoadingMoreProp(true);
+      const res = await getMyListings(nextPage, PAGE_SIZE, { transactionType });
+      if (requestId === propertyRequestId.current) {
+        setProperties(current => appendUniqueInventoryItems(current, res.data ?? []));
+        setPropertyTotal(res.totalCount ?? propertyTotal);
+        setPropertyPage(nextPage);
+      }
+    } catch (err) {
+      console.log('Error loading more properties:', err);
+      if (requestId === propertyRequestId.current) {
+        setPropertyError('Unable to load more listings. Please try again.');
+      }
+    } finally {
+      if (requestId === propertyRequestId.current) setLoadingMoreProp(false);
+    }
+  }, [loadingMoreProp, loadingProp, properties.length, propertyPage, propertyTotal, transactionType]);
+
+  const loadMoreRequirements = React.useCallback(async () => {
+    if (loadingReq || loadingMoreReq || requirements.length >= requirementTotal) return;
+    const nextPage = requirementPage + 1;
+    const requestId = requirementRequestId.current;
+    try {
+      setLoadingMoreReq(true);
+      const data = await getMyRequirements(nextPage, PAGE_SIZE, transactionType);
+      if (requestId === requirementRequestId.current) {
+        const items = data?.data || data || [];
+        setRequirements(current => appendUniqueInventoryItems(current, items));
+        setRequirementTotal(data?.totalCount ?? requirementTotal);
+        setRequirementPage(nextPage);
+      }
+    } catch (err) {
+      console.log('Error loading more requirements:', err);
+    } finally {
+      if (requestId === requirementRequestId.current) setLoadingMoreReq(false);
+    }
+  }, [loadingMoreReq, loadingReq, requirementPage, requirementTotal, requirements.length, transactionType]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -385,7 +440,7 @@ export default function MyPropertiesScreen() {
         <View style={[styles.tabsRow, { backgroundColor: colors.cardBg }]}>
           {(['Properties', 'Requirements'] as const).map(tab => {
             const active = activeTab === tab;
-            const count = tab === 'Properties' ? properties.length : requirements.length;
+            const count = tab === 'Properties' ? propertyTotal : requirementTotal;
             return (
               <TouchableOpacity
                 key={tab}
@@ -486,6 +541,32 @@ export default function MyPropertiesScreen() {
               </Text>
             )
           )}
+          {activeTab === 'Properties' && properties.length < propertyTotal ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Load more listings"
+              disabled={loadingMoreProp}
+              onPress={loadMoreProperties}
+              style={[styles.loadMoreButton, { borderColor: Brand.blueBorder, backgroundColor: colors.cardBg }]}
+            >
+              {loadingMoreProp ? <ActivityIndicator color={Brand.teal} /> : (
+                <Text style={[styles.loadMoreText, { color: Brand.teal }]}>Load more listings</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
+          {activeTab === 'Requirements' && requirements.length < requirementTotal ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Load more requirements"
+              disabled={loadingMoreReq}
+              onPress={loadMoreRequirements}
+              style={[styles.loadMoreButton, { borderColor: Brand.blueBorder, backgroundColor: colors.cardBg }]}
+            >
+              {loadingMoreReq ? <ActivityIndicator color={Brand.teal} /> : (
+                <Text style={[styles.loadMoreText, { color: Brand.teal }]}>Load more requirements</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
           <View style={styles.footerSpacer} />
         </ScrollView>
 
@@ -558,6 +639,19 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  loadMoreButton: {
+    minHeight: 48,
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadMoreText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   header: {
     height: 60,

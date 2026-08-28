@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, Easing, StyleSheet } from 'react-native';
+import { View, Animated, Easing, StyleSheet } from 'react-native';
 import { PropSeekrLogo } from '../PropSeekrLogo';
 import { Brand } from '../../theme/useAppTheme';
 import { FontSize, FontWeight } from '../../constants/theme';
@@ -87,7 +87,7 @@ export const LogoLoader: React.FC<LogoLoaderProps> = ({
               height: ringSize,
               borderRadius: ringSize / 2,
               borderColor: 'transparent',
-              borderTopColor: Brand.teal,
+              borderTopColor: color,
               borderRightColor: Brand.blue,
               borderWidth: 3,
               transform: [{ rotate: spin }],

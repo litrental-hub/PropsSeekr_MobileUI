@@ -1,4 +1,4 @@
-import { inventoryItemMatchesSearch } from '../inventorySearch';
+import { appendUniqueInventoryItems, inventoryItemMatchesSearch } from '../inventorySearch';
 
 describe('inventoryItemMatchesSearch', () => {
   const listing = {
@@ -26,5 +26,25 @@ describe('inventoryItemMatchesSearch', () => {
   it('returns all items for blank input and excludes unrelated items', () => {
     expect(inventoryItemMatchesSearch(listing, '  ', Object.keys(listing))).toBe(true);
     expect(inventoryItemMatchesSearch(listing, 'Pune villa', Object.keys(listing))).toBe(false);
+  });
+});
+
+describe('appendUniqueInventoryItems', () => {
+  it('appends a new page without duplicating boundary records', () => {
+    expect(appendUniqueInventoryItems(
+      [{ listingId: 1 }, { listingId: 2 }],
+      [{ listingId: 2 }, { listingId: 3 }],
+    )).toEqual([{ listingId: 1 }, { listingId: 2 }, { listingId: 3 }]);
+  });
+
+  it('supports requirement and generic IDs', () => {
+    expect(appendUniqueInventoryItems(
+      [{ requirementId: 10 }, { id: '11' }],
+      [{ requirementId: 10 }, { id: '12' }],
+    )).toHaveLength(3);
+  });
+
+  it('preserves records when the backend omits an ID', () => {
+    expect(appendUniqueInventoryItems([], [{ title: 'A' }, { title: 'B' }])).toHaveLength(2);
   });
 });

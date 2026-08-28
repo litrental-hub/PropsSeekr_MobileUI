@@ -57,6 +57,8 @@ The app locks when backgrounded if an app PIN exists, unless a controlled native
 
 Wallet values are refreshed from `/brokers/{brokerId}/wallet` at startup/resume and after connection actions. Do not mutate the displayed balance optimistically as the source of truth.
 
+The public token-pack catalogue is persisted in MMKV and rendered synchronously on Credits. A valid cache is fresh for six hours; stale data remains visible while one deduplicated background refresh runs, and a failed refresh falls back to the last valid catalogue. Wallet balances and payment order amounts are never sourced from this catalogue cache.
+
 `src/api/client.ts` is the single Axios client and attaches the bearer token. Known gap: its 401 interceptor calls `POST /auth/refresh`, but the current API has no refresh endpoint or persisted refresh-token flow. Expired tokens therefore cause logout. Do not promise silent renewal until both sides implement it.
 
 ## Current journeys
@@ -67,15 +69,15 @@ Registration posts account/KYC fields and moves to OTP. Unified login accepts an
 
 ### Dashboard
 
-The dashboard toggles Rentals/Buy-Sell, detects location, opens the map picker, filters by category/text, shows token/notification context, and exposes add-property, add-requirement, and bulk text upload.
+The dashboard has an explicit location gate. A fresh/legacy install requests current-location permission and performs no marketplace request until a real GPS or manually selected location is available. Denial/unavailable states offer app settings and the map picker; no fallback city or coordinate is submitted.
 
-It currently combines search results, matches, and owned listings into one card shape and de-duplicates by title plus subtitle. Individual failures are swallowed for resilience. This mixes marketplace, matched, and owned semantics; preserve it unless a feature deliberately separates these feeds.
+Dashboard discovery uses only canonical `/search/properties`. It does not combine matches or owned inventory. Rentals/Buy-Sell map to the server transaction direction, Available/Looking map to `SUPPLY`/`DEMAND`, property/configuration filters and debounced text search run server-side, and counts/pagination share the same filters.
 
-Known backend seam: non-admin `/search/properties` uses legacy `PropertyRequests`; admin search reads canonical listings/requirements. Canonical inventory and matching use listings and requirements.
+Listing and requirement cards are separate, strictly typed, and render only non-null database fields. Missing prices, areas, distances, amenities, preferences, freshness, and actions are omitted rather than replaced with mock content. Home discovery must never render or receive broker names, initials, brokerage details, phone numbers, other contact identity, or raw ingestion messages that may contain those values. Titles use structured property fields with neutral fallbacks. Its protected-contact action routes to the corresponding Matches view; only the mutual unlock flow may reveal contact data. Pull-to-refresh, retry, empty, loading, stale-request protection, and explicit load-more states are required.
 
 ### Google Map and location
 
-`SearchScreen` renders `react-native-maps`; Android uses `PROVIDER_GOOGLE`. It supports marker placement, a radius circle, GPS, text search, and persistent location.
+`SearchScreen` renders `react-native-maps`; Android uses `PROVIDER_GOOGLE`. It supports marker placement, a radius circle, GPS, text search, and persistent location. With no resolved location it shows a neutral India viewport but no marker and cannot confirm until the user selects a real point.
 
 The Android Maps key is injected through the manifest placeholder from `GOOGLE_MAPS_API_KEY` in `android/local.properties` or the environment. Never commit it. Restrict it to the Android application ID and signing certificate fingerprints and enable only required APIs.
 
@@ -85,17 +87,17 @@ Map rendering is Google, but `src/utils/location.ts` currently uses OpenStreetMa
 
 The active multi-step flow is under `src/screens/Properties/AddProperty/`, ending in `ReviewCardSection`. It maps UI values to backend tokens (`RENT`/`SELL`, `APARTMENT`, `BUNGALOW`, `PER_MONTH`, sizes/configuration) and posts `/listings`. The API derives the broker from the JWT.
 
-The form requests GPS and reads coordinates, but does not send them; the current listing contract has no direct coordinate fields. Do not claim manual listing radius matching is implemented.
+The form geocodes the entered property locality/city and sends those coordinates. The API resolves them to a canonical master locality and assigns the listing `master_id`; it must not use the broker's current GPS position as the property's location.
 
-The success alert does not inspect backend `embedding_completed`; it says matching began for any successful create. If status is shown, distinguish completed from failed/retry-required.
+The success alert does not claim embedding/matching completed unless that backend flag is explicitly handled. If status is shown, distinguish completed from failed/retry-required.
+
+The property form persists its property-type-specific fields in the listing `details` object. Matching-critical values use canonical fields instead: project/society name, numeric floor when parseable, road width/access, and fixed/negotiable price status are sent explicitly alongside property type, configuration, price, size, furnishing, facing, and canonical location. When photo sharing is enabled, brokers may select up to 12 photos/videos from the device; the listing is created first, then media is uploaded to `/listings/{listingId}/media`. A media failure is reported as a partial success because the canonical listing already exists. Do not retry listing creation to retry media.
 
 Inventory passes `editId` and initial data, but submission still creates a new listing. This is not a complete edit workflow.
 
 ### Add requirement
 
-`AddRequirementScreen` maps transaction/property/configuration, converts area to square feet, collects budget, city/locality, GPS, radius, furnishing/facing, and posts `/requirements`.
-
-Current backend behavior validates location/GPS/radius but persists only city plus locality text in `RawMessageText`; canonical locality IDs/coordinates/radius remain unset. Do not claim exact manual radius matching until persistence is completed.
+`AddRequirementScreen` maps transaction/property/configuration, converts minimum/maximum area to square feet, supports fixed/flexible/discuss budget modes and minimum/maximum budget, accepts up to five semicolon-separated same-city preferred localities, exposes a 2/3/5/10 km radius, and sends optional furnishing, facing, project, and notes. It geocodes every locality and posts `/requirements`; the API resolves them to `master` and persists the IDs in `preferred_locality_ids`. Broker name/contact are derived from authenticated identity and are not duplicated in the requirement form payload.
 
 The screen can prefill initial data, but submission creates a new requirement; there is no canonical update endpoint.
 
@@ -106,13 +108,15 @@ The screen can prefill initial data, but submission creates a new requirement; t
 - `GET /listings/mine?page=1&limit=20&transactionType=...`
 - `GET /requirements/mine?page=1&limit=20&transactionType=...`
 
-Normal users see broker-owned data; admins intentionally see all brokers. Cards use backend `matchCount` or `matchesFound`. Only the first 20 inventory rows are currently loaded; aggregate totals may be larger.
+Normal users see broker-owned data; admins intentionally see all brokers. Cards use backend `matchCount` or `matchesFound`. Inventory loads the first 20 rows and exposes an incremental Load More action for subsequent pages. Tab counts use the API's aggregate `totalCount`, not the loaded array length.
 
 A listing count opens Matches with `listingId`; a requirement count opens with `requirementId`. `resolveMatchSourceIds` protects this direction. Never pass one as the other.
 
 ### Matches and connection
 
 `MatchesScreen` calls `GET /user-matches` with pagination, transaction type, and optional listing, requirement, or exact match ID. It supports infinite paging, refresh, quality tabs, source headers, and notification deep links.
+
+`View Details` navigates to `MatchDetail`. The screen loads `GET /user-matches/matches/{matchId}/details`, shows the real listing and client requirement, renders persisted structured fields, and presents an authenticated photo/video gallery. Media bytes use bearer-authenticated `/user-matches/matches/{matchId}/media/{mediaId}` URLs; video opens in the in-app viewer. Missing media is an explicit empty state, never a stock image.
 
 The API response includes both match sides, score, current broker role, state, confirmation expiry, connection request direction/status, reveal state, and contact only after reveal. Use backend aggregate totals; loaded array length is only the current pages.
 
@@ -131,7 +135,9 @@ Rules:
 
 - Never use a direct reveal endpoint for regular unlocking.
 - Never infer contacts from listing, requirement, broker, notification, or cache.
+- Match details and media are visible to both brokers who are parties to the match. Broker name, phone, and email remain hidden until the API returns `isRevealed` with `unlockedContact`; notes can contain contact text and therefore rely on server redaction before reveal.
 - Requestor sees waiting; only the receiving broker sees Accept/Reject.
+- After the requestor confirms, the match card uses a highlighted, disabled `Unlock requested` action with `Waiting for other broker to accept`; it must not claim the contact is unlocked before a backend reveal exists.
 - Rejection, expiration, or insufficient credit spends nothing.
 - `credit_required` is not success.
 - Refresh the wallet after a response that can reveal/charge.
@@ -145,6 +151,8 @@ Known mismatch: API aggregate quality bands are 90/75, while current match cards
 ### Notifications, wallet, payments, upload
 
 The active notification API uses numeric broker routes under `/brokers/{brokerId}/notifications`. Taps can deep-link to an exact match. Unread count polls every 30 seconds.
+
+The Notifications screen refreshes on focus and silently every 15 seconds while visible. Broker A receives a distinct accepted/unlocked notification after Broker B accepts. Broker B's original request card also derives its presentation from the linked request status, so it becomes an accepted/handled card instead of continuing to ask for acceptance. Accepted cards use success styling and deep-link to the exact unlocked match.
 
 Wallet and ledger use `/brokers/{brokerId}/wallet` and `/credit-transactions`. Packs use `/credit-packs`; Razorpay uses `/payment/order` and `/payment/verify`.
 
@@ -167,11 +175,11 @@ An older static `Colors` palette remains in shell/tab code. Prefer the dynamic s
 - `createRequirement()` calls nonexistent `/requirements/create`; the active form uses `addRequirement()`.
 - `revealMatch()` exists as compatibility code; the active UI uses `confirmMatch()`.
 - `admin.ts` exposes internal maintenance operations, not normal user actions.
-- Older detail screens/modals coexist with active flows.
-- Dashboard mock constants supply fallback presentation values.
-- Several DTOs allow broad `any` shapes; narrow contracts instead of extending ambiguity.
+- Property and requirement standalone detail screens are still placeholders; match detail is implemented and database-backed.
+- Historical inventory without canonical locality coordinates is intentionally absent from nearby search until backfilled.
+- Several non-marketplace DTOs still allow broad `any` shapes; narrow contracts instead of extending ambiguity.
 - Android release currently uses debug signing.
-- `android/gradle.properties` contains Windows-specific Node/Java paths and `newArchEnabled=false`, which RN 0.85 warns is unsupported.
+- Android builds use the developer or CI environment's Java 17 and Node installations; do not commit machine-specific executable paths. React Native 0.85 uses the New Architecture by default.
 
 ## Build and verification
 
@@ -181,12 +189,6 @@ npm test -- --runInBand
 npm run lint
 cd android
 ./gradlew assembleDebug
-```
-
-On the current Mac, the Windows Java property needs a Java 17 override:
-
-```bash
-./gradlew -Dorg.gradle.java.home=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home assembleDebug
 ```
 
 Metro normally uses 8081; the API uses 5150. They are separate processes.

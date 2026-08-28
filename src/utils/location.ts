@@ -1,4 +1,4 @@
-import { Platform, PermissionsAndroid, Alert } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import axios from 'axios';
 import { LocationState } from '../store/appStore';
@@ -8,6 +8,15 @@ import { LocationState } from '../store/appStore';
  * Returns true if granted.
  */
 export async function requestLocationPermissions(): Promise<boolean> {
+  if (Platform.OS === 'ios') {
+    return new Promise(resolve => {
+      Geolocation.requestAuthorization(
+        () => resolve(true),
+        () => resolve(false),
+      );
+    });
+  }
+
   if (Platform.OS !== 'android') return true;
 
   try {
@@ -44,13 +53,13 @@ export async function reverseGeocode(lat: number, lng: number): Promise<{ locali
     });
     
     const addr = res.data?.address || {};
-    const city = addr.city || addr.town || addr.district || addr.state || 'Indore';
-    const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || 'Central Area';
+    const city = addr.city || addr.town || addr.district || addr.state || '';
+    const locality = addr.suburb || addr.neighbourhood || addr.residential || addr.road || addr.village || 'Current location';
 
     return { locality, city };
   } catch (error) {
     console.warn('Reverse geocode failed, using fallback coordinates name:', error);
-    return { locality: 'Current Location', city: 'India' };
+    return { locality: 'Current location', city: '' };
   }
 }
 
@@ -86,7 +95,6 @@ export async function forwardGeocode(query: string): Promise<{ lat: number; lng:
 export async function detectCurrentLocation(currentRadiusKm: number = 5): Promise<LocationState | null> {
   const hasPerm = await requestLocationPermissions();
   if (!hasPerm) {
-    Alert.alert('Permission Required', 'Please grant location access in device settings to detect your nearby property matches.');
     return null;
   }
 
@@ -102,6 +110,8 @@ export async function detectCurrentLocation(currentRadiusKm: number = 5): Promis
           locality,
           city,
           radiusKm: currentRadiusKm,
+          source: 'gps',
+          updatedAt: new Date().toISOString(),
         });
       },
       (err) => {

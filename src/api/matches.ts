@@ -1,4 +1,6 @@
 import apiClient from './client';
+import { API_BASE_URL, STORAGE_KEYS } from '../constants';
+import { storage } from '../utils/storage';
 
 // ── Contact shape returned after a successful reveal ──────────────
 export interface UnlockedContact {
@@ -38,6 +40,89 @@ export interface MatchDTO {
   initiatorPropertyRequestId?: string;
   [key: string]: any;
 }
+
+export interface MatchMediaDTO {
+  mediaId: number;
+  mediaType: 'image' | 'video';
+  url: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  sortOrder: number;
+}
+
+export interface MatchPropertyDetailDTO {
+  listingId: number;
+  transactionType?: string | null;
+  propertyType?: string | null;
+  configuration?: string | null;
+  price?: number | null;
+  priceUnit?: string | null;
+  size?: number | null;
+  sizes: Array<{ sizeSqft: number; label?: string | null }>;
+  furnishing?: string | null;
+  facing?: string | null;
+  floorNumber?: number | null;
+  status?: string | null;
+  projectName?: string | null;
+  locality?: string | null;
+  roadInfo?: string | null;
+  city?: string | null;
+  description?: string | null;
+  photoSharingPreference?: string | null;
+  details: Record<string, unknown>;
+  media: MatchMediaDTO[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface MatchRequirementDetailDTO {
+  requirementId: number;
+  transactionType?: string | null;
+  propertyType?: string | null;
+  configurations: string[];
+  budget?: number | null;
+  budgetUnit?: string | null;
+  size?: number | null;
+  furnishingPreference?: string | null;
+  facingPreference?: string | null;
+  status?: string | null;
+  city?: string | null;
+  description?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface MatchDetailDTO {
+  matchId: number;
+  listingId: number;
+  requirementId: number;
+  matchScore?: number | null;
+  state: string;
+  currentBrokerRole: string;
+  currentBrokerConfirmed: boolean;
+  isRevealed: boolean;
+  connectionRequestStatus?: string | null;
+  unlockedContact?: UnlockedContact | null;
+  property: MatchPropertyDetailDTO;
+  requirement: MatchRequirementDetailDTO;
+}
+
+export const getMatchDetails = async (matchId: number): Promise<MatchDetailDTO> => {
+  const response = await apiClient.get<{ success: boolean; data: MatchDetailDTO }>(
+    `/user-matches/matches/${matchId}/details`,
+  );
+  return response.data.data;
+};
+
+export const getAuthenticatedMediaSource = (relativeUrl: string) => {
+  const origin = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+  const path = relativeUrl.startsWith('/api/v1') ? relativeUrl : `/api/v1${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`;
+  const token = storage.getString(STORAGE_KEYS.ACCESS_TOKEN);
+  return {
+    uri: `${origin}${path}`,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  };
+};
 
 export interface Pagination {
   currentPage: number;

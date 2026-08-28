@@ -21,10 +21,8 @@ import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { addRequirement } from '../../api/requirements';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
-import { useAuthStore } from '../../store/authStore';
 import { PROPERTY_TYPES, BHK_OPTIONS } from '../../constants';
-import Geolocation from '@react-native-community/geolocation';
-import { requestLocationPermissions } from '../../utils/location';
+import { forwardGeocode, reverseGeocode } from '../../utils/location';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -44,21 +42,6 @@ const FURNISHING_OPTIONS = [
 const FACING_OPTIONS = ['East', 'West', 'North', 'South', 'North-East', 'North-West', 'South-East', 'South-West'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDateDDMMYY(date: Date): string {
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const yy = String(date.getFullYear()).slice(2);
-  return `${dd}/${mm}/${yy}`;
-}
-
-function normalizePhone(raw: string): string {
-  return raw.replace(/\D/g, '').slice(-10);
-}
-
-function isValidIndianPhone(phone: string): boolean {
-  return /^[6-9]\d{9}$/.test(phone);
-}
 
 function propertyCategory(propertyType: string): string {
   if (propertyType.startsWith('Commercial') || propertyType === 'Warehouse') return 'COMMERCIAL';
@@ -97,15 +80,11 @@ function PillGroup<T extends string>({
   options,
   selected,
   onSelect,
-  labelKey,
-  valueKey,
   colors,
 }: {
   options: readonly T[] | readonly { label: string; value: T }[];
   selected: T | '';
   onSelect: (v: T) => void;
-  labelKey?: never;
-  valueKey?: never;
   colors: any;
 }) {
   const isObjArray = typeof options[0] === 'object';
@@ -195,12 +174,8 @@ function getInputStyle(hasError: boolean, colors: any) {
 
 export default function AddRequirementScreen() {
   const navigation = useNavigation<any>();
-  const { colors, isDark, type } = useAppTheme();
-  const user = useAuthStore(s => s.user);
-
+  const { colors, isDark } = useAppTheme();
   // ── Mandatory state ──────────────────────────────────────────────────────
-  const [senderName, setSenderName] = useState(user?.name || '');
-  const [contactNumber, setContactNumber] = useState(user?.phone || '');
   const [propertyType, setPropertyType] = useState<string>('');
   const [location, setLocation] = useState('');
   const [listingType, setListingType] = useState<string>('RENT');
@@ -209,9 +184,12 @@ export default function AddRequirementScreen() {
   const [configuration, setConfiguration] = useState<string>('');
   const [customConfiguration, setCustomConfiguration] = useState<string>('');
   const [size, setSize] = useState('');
+  const [maxSize, setMaxSize] = useState('');
   const [sizeUnit, setSizeUnit] = useState<string>('Sq Ft');
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
+  const [budgetType, setBudgetType] = useState<'FIXED' | 'FLEXIBLE' | 'NOBUDGET'>('FIXED');
+  const [radiusKm, setRadiusKm] = useState('5');
   const [facing, setFacing] = useState<string>('');
   const [furnishing, setFurnishing] = useState<string>('');
   const [projectName, setProjectName] = useState('');
@@ -297,7 +275,6 @@ export default function AddRequirementScreen() {
   const [sizeUnitDropdownOpen, setSizeUnitDropdownOpen] = useState(false);
 
   // ── Refs for keyboard next ───────────────────────────────────────────────
-  const contactRef = useRef<TextInput>(null);
   const locationRef = useRef<TextInput>(null);
   const projectRef = useRef<TextInput>(null);
   const sizeRef = useRef<TextInput>(null);
@@ -310,15 +287,16 @@ export default function AddRequirementScreen() {
   function validate(): boolean {
     const newErrors: Record<string, string> = {};
 
-    if (!senderName.trim()) newErrors.senderName = 'Name is required.';
-    const normalizedPhone = normalizePhone(contactNumber);
-    if (!isValidIndianPhone(normalizedPhone)) {
-      newErrors.contactNumber = 'Enter a valid 10-digit mobile number (starts with 6–9).';
-    }
     if (!propertyType) newErrors.propertyType = 'Please select a property type.';
-    if (!location.trim()) newErrors.location = 'Location is required.';
+    const preferredLocationCount = location.split(';').map(value => value.trim()).filter(Boolean).length;
+    if (preferredLocationCount === 0) {
+      newErrors.location = 'At least one location is required.';
+    } else if (preferredLocationCount > 5) {
+      newErrors.location = 'Add no more than five preferred localities.';
+    }
     if (!size || Number(size) <= 0) newErrors.size = 'Required area must be greater than zero.';
-    if (!maxPrice || Number(maxPrice) <= 0) newErrors.maxPrice = 'Maximum budget must be greater than zero.';
+    if (maxSize && Number(maxSize) < Number(size)) newErrors.maxSize = 'Maximum area must be greater than or equal to minimum area.';
+    if (budgetType === 'FIXED' && (!maxPrice || Number(maxPrice) <= 0)) newErrors.maxPrice = 'Maximum budget must be greater than zero.';
     if (minPrice && maxPrice && Number(minPrice) > Number(maxPrice)) {
       newErrors.maxPrice = 'Maximum budget must be greater than or equal to minimum budget.';
     }
@@ -337,43 +315,33 @@ export default function AddRequirementScreen() {
     }
 
     setIsSubmitting(true);
-    const hasPerm = await requestLocationPermissions();
-    if (!hasPerm) {
+    const locationTexts = location.split(';').map(value => value.trim()).filter(Boolean).slice(0, 5);
+    const geocodedLocations = await Promise.all(locationTexts.map(value => forwardGeocode(value)));
+    if (geocodedLocations.some(value => !value)) {
       setIsSubmitting(false);
-      Alert.alert('Location Permission Denied', 'Location permission is required to obtain valid GPS coordinates for matching. Please grant access in device settings.');
+      const failedIndex = geocodedLocations.findIndex(value => !value);
+      Alert.alert('Location Not Found', `We could not find "${locationTexts[failedIndex]}". Please enter a more specific locality and city.`);
       return;
     }
+    const resolvedLocations = await Promise.all(geocodedLocations.map(async (coordinates, index) => {
+      const { lat, lng } = coordinates!;
+      const address = await reverseGeocode(lat, lng);
+      const entered = locationTexts[index];
+      return {
+        city: address.city || entered.split(',').pop()?.trim() || entered,
+        locality: address.locality || entered,
+        lat,
+        lng,
+      };
+    }));
+    const primaryLocation = resolvedLocations[0];
 
-    let lat = 0;
-    let lng = 0;
-    try {
-      const coords = await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
-        Geolocation.getCurrentPosition(
-          (pos) => resolve(pos.coords),
-          (err) => reject(err),
-          { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-        );
-      });
-      lat = coords.latitude;
-      lng = coords.longitude;
-    } catch (err) {
-      setIsSubmitting(false);
-      Alert.alert('GPS Unavailable', 'Could not obtain valid GPS coordinates. Please ensure GPS/location services are turned on and try again.');
-      return;
-    }
-
-    if (!lat || !lng || (lat === 0 && lng === 0)) {
-      setIsSubmitting(false);
-      Alert.alert('Invalid Coordinates', 'Obtained invalid GPS coordinates. Please check your GPS signal and try again.');
-      return;
-    }
-
-    const maxPriceNum = Number(maxPrice);
+    const maxPriceNum = Number(maxPrice || 0);
     const isRental = listingType === 'RENT';
 
     const finalConfiguration = configuration === 'Other' ? customConfiguration.trim() : configuration;
     const lookingFor = `Wants to ${isRental ? 'Rent' : 'Buy'} ${finalConfiguration ? finalConfiguration + ' ' : ''}${propertyType}`;
-    const locality = location.trim();
+    const locality = primaryLocation.locality;
 
     const payload = {
       transactionType: isRental ? 'RENTAL' as const : 'BUY_SELL' as const,
@@ -382,12 +350,17 @@ export default function AddRequirementScreen() {
       configurations: finalConfiguration ? [finalConfiguration] : [],
       description: lookingFor,
       budgetMax: maxPriceNum,
+      budgetMin: minPrice ? Number(minPrice) : undefined,
+      budgetType,
       minimumSize: areaInSquareFeet(size, sizeUnit),
-      city: locality.split(',').pop()?.trim() || locality,
+      maximumSize: maxSize ? areaInSquareFeet(maxSize, sizeUnit) : undefined,
+      city: primaryLocation.city,
       locality,
-      lat,
-      lng,
-      radiusKm: 5.0,
+      lat: primaryLocation.lat,
+      lng: primaryLocation.lng,
+      radiusKm: Number(radiusKm),
+      preferredLocations: resolvedLocations,
+      preferredProjectNames: projectName.trim() ? [projectName.trim()] : [],
       furnishingPreference: furnishing || undefined,
       facingPreference: facing || undefined,
       additionalNotes: description.trim() || undefined,
@@ -473,36 +446,6 @@ export default function AddRequirementScreen() {
               {/* ── MANDATORY FIELDS ── */}
               <SectionHeader title="Basic Details  (Required)" colors={colors} />
 
-              <FieldWrap label="Your Name" required error={errors.senderName} colors={colors}>
-                <TextInput
-                  style={getInputStyle(!!errors.senderName, colors)}
-                  placeholder="e.g. Rahul Sharma"
-                  placeholderTextColor={colors.textDim}
-                  value={senderName}
-                  onChangeText={v => { setSenderName(v); if (errors.senderName) setErrors(p => ({ ...p, senderName: '' })); }}
-                  autoCapitalize="words"
-                  returnKeyType="next"
-                  onSubmitEditing={() => contactRef.current?.focus()}
-                  blurOnSubmit={false}
-                />
-              </FieldWrap>
-
-              <FieldWrap label="Contact Number" required error={errors.contactNumber} colors={colors}>
-                <TextInput
-                  ref={contactRef}
-                  style={getInputStyle(!!errors.contactNumber, colors)}
-                  placeholder="10-digit mobile number"
-                  placeholderTextColor={colors.textDim}
-                  value={contactNumber}
-                  onChangeText={v => { setContactNumber(v); if (errors.contactNumber) setErrors(p => ({ ...p, contactNumber: '' })); }}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  returnKeyType="next"
-                  onSubmitEditing={() => locationRef.current?.focus()}
-                  blurOnSubmit={false}
-                />
-              </FieldWrap>
-
               <FieldWrap label="Looking To" required colors={colors}>
                 <PillGroup
                   options={['Rent', 'Buy']}
@@ -521,11 +464,11 @@ export default function AddRequirementScreen() {
                 />
               </FieldWrap>
 
-              <FieldWrap label="Preferred Location" required error={errors.location} colors={colors}>
+              <FieldWrap label="Preferred Location(s)" required error={errors.location} colors={colors}>
                 <TextInput
                   ref={locationRef}
                   style={getInputStyle(!!errors.location, colors)}
-                  placeholder="e.g. Vijay Nagar, Indore"
+                  placeholder="Vijay Nagar, Indore; Palasia, Indore"
                   placeholderTextColor={colors.textDim}
                   value={location}
                   onChangeText={v => { setLocation(v); if (errors.location) setErrors(p => ({ ...p, location: '' })); }}
@@ -533,6 +476,15 @@ export default function AddRequirementScreen() {
                   onSubmitEditing={() => projectRef.current?.focus()}
                   blurOnSubmit={false}
                 />
+                <Text style={[styles.fieldHint, { color: colors.textDim }]}>Separate up to five localities with a semicolon.</Text>
+                <Text style={[styles.label, { color: colors.textSecondary, marginTop: 12 }]}>Search Radius</Text>
+                <PillGroup
+                  options={['2', '3', '5', '10']}
+                  selected={radiusKm}
+                  onSelect={setRadiusKm}
+                  colors={colors}
+                />
+                <Text style={[styles.fieldHint, { color: colors.textDim }]}>{radiusKm} km around each selected locality</Text>
               </FieldWrap>
 
               {/* ── OPTIONAL FIELDS ── */}
@@ -581,13 +533,13 @@ export default function AddRequirementScreen() {
               </FieldWrap>
 
               {/* Size row */}
-              <FieldWrap label="Required Area" required error={errors.size} colors={colors}>
+              <FieldWrap label="Required Area Range" required error={errors.size || errors.maxSize} colors={colors}>
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                   {/* Numeric area input */}
                   <TextInput
                     ref={sizeRef}
                     style={[getInputStyle(!!errors.size, colors), { flex: 1 }]}
-                    placeholder="e.g. 1200"
+                    placeholder="Min"
                     placeholderTextColor={colors.textDim}
                     value={size}
                     onChangeText={value => {
@@ -598,6 +550,18 @@ export default function AddRequirementScreen() {
                     returnKeyType="next"
                     onSubmitEditing={() => priceRef.current?.focus()}
                     blurOnSubmit={false}
+                  />
+
+                  <TextInput
+                    style={[getInputStyle(!!errors.maxSize, colors), { flex: 1 }]}
+                    placeholder="Max (optional)"
+                    placeholderTextColor={colors.textDim}
+                    value={maxSize}
+                    onChangeText={value => {
+                      setMaxSize(value);
+                      if (errors.maxSize) setErrors(previous => ({ ...previous, maxSize: '' }));
+                    }}
+                    keyboardType="numeric"
                   />
 
                   {/* Unit dropdown trigger */}
@@ -658,7 +622,20 @@ export default function AddRequirementScreen() {
                 </Modal>
               </FieldWrap>
 
-              <FieldWrap label="Budget Range (₹)" required error={errors.maxPrice} colors={colors}>
+              <FieldWrap label="Budget Type" colors={colors}>
+                <PillGroup<'FIXED' | 'FLEXIBLE' | 'NOBUDGET'>
+                  options={[
+                    { label: 'Fixed range', value: 'FIXED' as const },
+                    { label: 'Flexible', value: 'FLEXIBLE' as const },
+                    { label: 'Discuss', value: 'NOBUDGET' as const },
+                  ]}
+                  selected={budgetType}
+                  onSelect={setBudgetType}
+                  colors={colors}
+                />
+              </FieldWrap>
+
+              <FieldWrap label="Budget Range (₹)" required={budgetType === 'FIXED'} error={errors.maxPrice} colors={colors}>
                 <View style={{ flexDirection: 'row', gap: 12 }}>
                   <View style={{ flex: 1 }}>
                     <TextInput
@@ -681,7 +658,7 @@ export default function AddRequirementScreen() {
                     <TextInput
                       ref={priceRef}
                       style={getInputStyle(false, colors)}
-                      placeholder="Max (e.g. 50000)"
+                      placeholder={budgetType === 'FIXED' ? 'Max (e.g. 50000)' : 'Max (optional)'}
                       placeholderTextColor={colors.textDim}
                       value={maxPrice}
                       onChangeText={value => {
@@ -781,6 +758,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
 
   fieldWrap: { marginBottom: 18 },
+  fieldHint: { fontSize: 11, marginTop: 6 },
   label: { fontSize: 13, fontWeight: '600', marginBottom: 8 },
   input: {
     borderWidth: 1.5,

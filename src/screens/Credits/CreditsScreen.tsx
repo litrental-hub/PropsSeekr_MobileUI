@@ -21,10 +21,15 @@ import { PurchaseBottomSheet } from './components/PurchaseBottomSheet';
 import { UnlockBottomSheet } from './components/UnlockBottomSheet';
 import { ContactRevealedModal } from './components/ContactRevealedModal';
 import { CreditTransaction, getCreditTransactions } from '../../api/wallet';
-import { getCreditPacks } from '../../api/payment';
 import { useAuthStore } from '../../store/authStore';
 import { useFocusEffect } from '@react-navigation/native';
 import { refreshWallet } from '../../services/walletSync';
+import {
+  CreditPackViewModel,
+  loadCreditPacks,
+  mapCreditPacksForDisplay,
+  readCachedCreditPacks,
+} from '../../services/creditPacksCache';
 
 interface TransactionRow {
   id: string;
@@ -72,14 +77,18 @@ export default function CreditsScreen() {
   const walletBrokerId = useAppStore(s => s.walletBrokerId);
   const user = useAuthStore(s => s.user);
 
-  const [purchasePack, setPurchasePack] = useState<any>(null);
+  const initialCachedPacks = React.useMemo(
+    () => mapCreditPacksForDisplay(readCachedCreditPacks()?.packs ?? []),
+    [],
+  );
+  const [purchasePack, setPurchasePack] = useState<CreditPackViewModel | null>(null);
   const [unlockVisible, setUnlockVisible] = useState(false);
   const [revealedVisible, setRevealedVisible] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [packs, setPacks] = useState<any[]>([]);
+  const [packs, setPacks] = useState<CreditPackViewModel[]>(initialCachedPacks);
   const [packsError, setPacksError] = useState<string | null>(null);
 
   useFocusEffect(
@@ -96,39 +105,24 @@ export default function CreditsScreen() {
           .finally(() => setHistoryLoading(false));
       }
 
-      // Fetch credit packs
-      getCreditPacks()
-        .then(res => {
+      // Render the persistent cache immediately. Fresh caches avoid the network;
+      // stale caches remain visible while one deduplicated refresh runs.
+      loadCreditPacks()
+        .then(result => {
           setPacksError(null);
-          // Handle both { success: true, packs: [] } AND direct array cases
-          const packsArray = res?.packs || (Array.isArray(res) ? res : []);
-          
-          if (packsArray.length > 0) {
-            const mappedPacks = packsArray.map((p: any) => ({
-              id: String(p.id),
-              tierId: `CREDITS_${p.credits}`,
-              name: p.name,
-              credits: p.credits,
-              rateText: `₹${(p.price / p.credits).toFixed(0)} per token`,
-              price: `₹${p.price.toLocaleString('en-IN')}`,
-              saving: p.credits >= 20 ? 'Popular' : null,
-              isPopular: p.credits === 20 || p.name.toLowerCase().includes('growth'),
-              rawPrice: p.price
-            }));
-            setPacks(mappedPacks);
-          } else {
-            setPacks([]);
-            setPacksError('No token packs are currently available.');
-          }
+          setPacks(mapCreditPacksForDisplay(result.packs));
         })
         .catch(err => {
-          setPacks([]);
           setPacksError(err?.response?.data?.message || err?.message || 'Could not load token packs.');
         });
-    }, [user?.brokerId])
+    }, [colors, user?.brokerId])
   );
 
-  const handleBuy = (pack: any) => {
+  const handleBuy = (pack?: CreditPackViewModel) => {
+    if (!pack) {
+      setPacksError('Token packs are still loading. Please try again.');
+      return;
+    }
     setPurchasePack(pack);
   };
 

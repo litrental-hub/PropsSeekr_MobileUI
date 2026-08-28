@@ -18,11 +18,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAuthStore } from '../../store/authStore';
-import { useAppStore } from '../../store/appStore';
 import { login } from '../../api/auth';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
-import { checkBiometricSupport, hasSavedCredentials, getSavedCredentials, saveCredentials } from '../../utils/biometrics';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTranslation } from 'react-i18next';
 
@@ -36,12 +34,11 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [canBiometric, setCanBiometric] = useState(false);
   const passwordInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const { t } = useTranslation();
   
-  const { colors, type, isDark } = useAppTheme();
+  const { colors, type } = useAppTheme();
 
   const handleLogin = async () => {
     if (!identifier || !password) {

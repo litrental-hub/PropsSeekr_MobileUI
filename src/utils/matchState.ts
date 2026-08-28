@@ -10,18 +10,21 @@ export function formatCountdown(windowExpiresAt: string | null, nowMs = Date.now
     : `${minutes}m ${seconds.toString().padStart(2, '0')}s remaining`;
 }
 
-export type MatchPrimaryAction = 'unlocked' | 'reveal' | 'waiting' | 'accept' | 'confirm';
+export type MatchPrimaryAction = 'unlocked' | 'credit_required' | 'waiting' | 'accept' | 'confirm';
 
 export function getMatchPrimaryAction(match: {
   state: string;
   currentBrokerConfirmed: boolean;
   isRevealed: boolean;
   unlockedContact: unknown | null;
+  connectionRequestStatus?: string | null;
+  incomingConnectionRequest?: boolean;
 }): MatchPrimaryAction {
   if (match.isRevealed && match.unlockedContact) return 'unlocked';
-  if (match.state === 'confirmed') return 'reveal';
-  if (match.state === 'pending_confirmation') {
-    return match.currentBrokerConfirmed ? 'waiting' : 'accept';
-  }
+  const state = match.state.toLowerCase();
+  const requestStatus = match.connectionRequestStatus?.toLowerCase() ?? '';
+  if (requestStatus === 'credit_required') return 'credit_required';
+  if (match.incomingConnectionRequest || (state === 'pending_confirmation' && !match.currentBrokerConfirmed)) return 'accept';
+  if (match.currentBrokerConfirmed && (state === 'pending_confirmation' || state === 'confirmed' || requestStatus === 'pending')) return 'waiting';
   return 'confirm';
 }

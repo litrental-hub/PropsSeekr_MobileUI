@@ -40,8 +40,14 @@ describe('addListing', () => {
       listing_type: 'RENT' as const,
       property_type: 'APARTMENT',
       locality: 'Pune',
+      latitude: 18.5204,
+      longitude: 73.8567,
       price: 25000,
       price_unit: 'PER_MONTH',
+      floor_number: 4,
+      project_name: 'Omaxe Hills',
+      road_info: '60 ft road',
+      price_status: 'NEGOTIABLE' as const,
       posted_by: 'BROKER',
       requirement_ids: [],
       sizes: [{ size_sqft: 1000, bhk: 1 }],
@@ -52,6 +58,10 @@ describe('addListing', () => {
     expect(mockedPost).toHaveBeenCalledWith('/listings', expect.objectContaining({
       listing_type: 'RENT',
       price_unit: 'PER_MONTH',
+      floor_number: 4,
+      project_name: 'Omaxe Hills',
+      road_info: '60 ft road',
+      price_status: 'NEGOTIABLE',
     }));
   });
 });

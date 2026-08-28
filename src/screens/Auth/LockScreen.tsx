@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAuthStore } from '../../store/authStore';
-import { checkBiometricSupport, hasSavedCredentials, getSavedCredentials, promptBiometricAuth } from '../../utils/biometrics';
+import { promptBiometricAuth } from '../../utils/biometrics';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 export default function LockScreen() {
@@ -18,18 +18,18 @@ export default function LockScreen() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    if (biometricEnabled) {
-      handleBiometricUnlock();
-    }
-  }, [biometricEnabled]);
-
-  const handleBiometricUnlock = async () => {
+  const handleBiometricUnlock = useCallback(async () => {
     const success = await promptBiometricAuth('Unlock PropSeekr');
     if (success) {
       setIsLocked(false);
     }
-  };
+  }, [setIsLocked]);
+
+  useEffect(() => {
+    if (biometricEnabled) {
+      handleBiometricUnlock();
+    }
+  }, [biometricEnabled, handleBiometricUnlock]);
 
   const handleKeyPress = (num: string) => {
     if (error) setError(false);

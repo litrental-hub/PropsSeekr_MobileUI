@@ -12,7 +12,7 @@ export default function SettingsScreen() {
   const navigation = useNavigation();
   const setTheme = useAppStore(s => s.setTheme);
   const themeMode = useAppStore(s => s.theme);
-  const { colors, type, isDark } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const { t, i18n } = useTranslation();
 
   return (

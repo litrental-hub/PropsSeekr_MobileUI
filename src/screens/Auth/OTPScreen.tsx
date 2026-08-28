@@ -14,7 +14,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
-import { sendEmailOTP, verifyEmailOTP, sendOTP, verifyOTP, resendOTP } from '../../api/auth';
+import { sendEmailOTP, verifyEmailOTP, verifyOTP, resendOTP } from '../../api/auth';
 import { useAuthStore } from '../../store/authStore';
 
 export default function OTPScreen() {

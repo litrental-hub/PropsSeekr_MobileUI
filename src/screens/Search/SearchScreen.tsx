@@ -22,6 +22,7 @@ import { detectCurrentLocation, forwardGeocode, reverseGeocode } from '../../uti
 import { useTranslation } from 'react-i18next';
 
 const RADIUS_OPTIONS = [2, 5, 10, 15, 25];
+const INDIA_MAP_CENTRE = { latitude: 20.5937, longitude: 78.9629 };
 
 const getMapRegion = (latitude: number, longitude: number, radiusKm: number): Region => {
   const latitudeDelta = Math.max(0.025, radiusKm * 0.018);
@@ -40,11 +41,13 @@ export default function SearchScreen() {
   const { location, setLocation } = useAppStore();
   const { t } = useTranslation();
 
-  const [lat, setLat] = useState(location.lat || 22.7533);
-  const [lng, setLng] = useState(location.lng || 75.8937);
-  const [city, setCity] = useState(location.city || 'Indore');
-  const [locality, setLocality] = useState(location.locality || 'Vijay Nagar');
-  const [radiusKm, setRadiusKm] = useState(location.radiusKm || 5);
+  const [lat, setLat] = useState(location?.lat ?? INDIA_MAP_CENTRE.latitude);
+  const [lng, setLng] = useState(location?.lng ?? INDIA_MAP_CENTRE.longitude);
+  const [city, setCity] = useState(location?.city ?? '');
+  const [locality, setLocality] = useState(location?.locality ?? '');
+  const [radiusKm, setRadiusKm] = useState(location?.radiusKm ?? 5);
+  const [hasSelectedLocation, setHasSelectedLocation] = useState(Boolean(location));
+  const [locationSource, setLocationSource] = useState<'gps' | 'manual'>(location?.source ?? 'manual');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -58,6 +61,8 @@ export default function SearchScreen() {
     const { latitude, longitude } = event.nativeEvent.coordinate;
     setLat(latitude);
     setLng(longitude);
+    setHasSelectedLocation(true);
+    setLocationSource('manual');
     setIsLoading(true);
 
     try {
@@ -78,6 +83,8 @@ export default function SearchScreen() {
     if (result) {
       setLat(result.lat);
       setLng(result.lng);
+      setHasSelectedLocation(true);
+      setLocationSource('manual');
       const rev = await reverseGeocode(result.lat, result.lng);
       setLocality(rev.locality);
       setCity(rev.city);
@@ -95,6 +102,8 @@ export default function SearchScreen() {
       setLng(loc.lng);
       setCity(loc.city);
       setLocality(loc.locality);
+      setHasSelectedLocation(true);
+      setLocationSource('gps');
       animateMapTo(loc.lat, loc.lng, loc.radiusKm);
     }
     setIsLoading(false);
@@ -108,7 +117,16 @@ export default function SearchScreen() {
 
   // Save & Confirm
   const handleConfirm = () => {
-    setLocation({ lat, lng, city, locality, radiusKm });
+    if (!hasSelectedLocation) return;
+    setLocation({
+      lat,
+      lng,
+      city,
+      locality,
+      radiusKm,
+      source: locationSource,
+      updatedAt: new Date().toISOString(),
+    });
     navigation.goBack();
   };
 
@@ -156,7 +174,11 @@ export default function SearchScreen() {
             ref={mapRef}
             provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
             style={styles.map}
-            initialRegion={getMapRegion(lat, lng, radiusKm)}
+            initialRegion={hasSelectedLocation ? getMapRegion(lat, lng, radiusKm) : {
+              ...INDIA_MAP_CENTRE,
+              latitudeDelta: 18,
+              longitudeDelta: 18,
+            }}
             onPress={handleMapPress}
             showsUserLocation
             showsMyLocationButton={false}
@@ -165,14 +187,18 @@ export default function SearchScreen() {
             loadingBackgroundColor={colors.bgMid}
             toolbarEnabled={false}
           >
-            <Circle
-              center={{ latitude: lat, longitude: lng }}
-              radius={radiusKm * 1000}
-              strokeColor={Brand.blue}
-              fillColor="rgba(37, 99, 235, 0.20)"
-              strokeWidth={2}
-            />
-            <Marker coordinate={{ latitude: lat, longitude: lng }} pinColor={Brand.blue} />
+            {hasSelectedLocation ? (
+              <>
+                <Circle
+                  center={{ latitude: lat, longitude: lng }}
+                  radius={radiusKm * 1000}
+                  strokeColor={Brand.blue}
+                  fillColor="rgba(37, 99, 235, 0.20)"
+                  strokeWidth={2}
+                />
+                <Marker coordinate={{ latitude: lat, longitude: lng }} pinColor={Brand.blue} />
+              </>
+            ) : null}
           </MapView>
 
           {/* Floating GPS Target Trigger */}
@@ -188,10 +214,12 @@ export default function SearchScreen() {
             <Text style={styles.pinIcon}>📍</Text>
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={[styles.locationTitle, { color: colors.textPrimary }]} numberOfLines={1}>
-                {locality}, {city}
+                {hasSelectedLocation ? [locality, city].filter(Boolean).join(', ') : 'Choose a location'}
               </Text>
               <Text style={[styles.locationCoords, { color: colors.textDim }]}>
-                {lat.toFixed(4)}, {lng.toFixed(4)} · Tap map to change position
+                {hasSelectedLocation
+                  ? `${lat.toFixed(4)}, ${lng.toFixed(4)} · Tap map to change position`
+                  : 'Search, use GPS, or tap the map'}
               </Text>
             </View>
             {isLoading && <ActivityIndicator color={Brand.teal} size="small" />}
@@ -222,7 +250,12 @@ export default function SearchScreen() {
           </View>
 
           {/* Confirm Button */}
-          <TouchableOpacity onPress={handleConfirm} activeOpacity={0.85} style={styles.confirmBtnWrap}>
+          <TouchableOpacity
+            onPress={handleConfirm}
+            activeOpacity={0.85}
+            disabled={!hasSelectedLocation}
+            style={[styles.confirmBtnWrap, !hasSelectedLocation && { opacity: 0.45 }]}
+          >
             <LinearGradient
               colors={[Brand.blue, Brand.teal]}
               start={{ x: 0, y: 0 }}

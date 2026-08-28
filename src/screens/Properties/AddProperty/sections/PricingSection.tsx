@@ -5,7 +5,7 @@ import { FormInput } from '../../../../components/forms/FormInput';
 import { Toggle } from '../../../../components/forms/Toggle';
 import { useAppTheme, Brand } from '../../../../theme/useAppTheme';
 
-export function PricingSection({ themeColor }: { themeColor: string }) {
+export function PricingSection(_props: { themeColor: string }) {
   const { state, updateState, isSimulatingAI } = useAddPropertyForm();
   const { colors } = useAppTheme();
 

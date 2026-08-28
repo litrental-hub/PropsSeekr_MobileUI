@@ -1,6 +1,5 @@
 import ReactNativeBiometrics, { BiometryTypes } from 'react-native-biometrics';
 import * as Keychain from 'react-native-keychain';
-import { Alert } from 'react-native';
 
 const rnBiometrics = new ReactNativeBiometrics();
 
@@ -38,7 +37,7 @@ export const hasSavedCredentials = async (): Promise<boolean> => {
       authenticationPrompt: { title: 'Authenticate' },
     });
     return !!credentials;
-  } catch (error) {
+  } catch {
     return false;
   }
 };

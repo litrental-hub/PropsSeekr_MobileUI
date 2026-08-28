@@ -11,8 +11,10 @@ describe('match state helpers', () => {
     [{ state: 'matched', currentBrokerConfirmed: false, isRevealed: false, unlockedContact: null }, 'confirm'],
     [{ state: 'expired', currentBrokerConfirmed: false, isRevealed: false, unlockedContact: null }, 'confirm'],
     [{ state: 'pending_confirmation', currentBrokerConfirmed: true, isRevealed: false, unlockedContact: null }, 'waiting'],
-    [{ state: 'pending_confirmation', currentBrokerConfirmed: false, isRevealed: false, unlockedContact: null }, 'accept'],
-    [{ state: 'confirmed', currentBrokerConfirmed: true, isRevealed: false, unlockedContact: null }, 'reveal'],
+    [{ state: 'matched', currentBrokerConfirmed: true, isRevealed: false, unlockedContact: null, connectionRequestStatus: 'pending' }, 'waiting'],
+    [{ state: 'pending_confirmation', currentBrokerConfirmed: false, isRevealed: false, unlockedContact: null, incomingConnectionRequest: true }, 'accept'],
+    [{ state: 'confirmed', currentBrokerConfirmed: true, isRevealed: false, unlockedContact: null }, 'waiting'],
+    [{ state: 'confirmed', currentBrokerConfirmed: true, isRevealed: false, unlockedContact: null, connectionRequestStatus: 'credit_required' }, 'credit_required'],
     [{ state: 'confirmed', currentBrokerConfirmed: true, isRevealed: true, unlockedContact: { ownerName: 'A' } }, 'unlocked'],
   ])('maps backend state to %s', (match, expected) => {
     expect(getMatchPrimaryAction(match)).toBe(expected);

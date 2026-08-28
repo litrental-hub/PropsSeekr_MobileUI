@@ -5,12 +5,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   Share,
-  Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { Colors, PropertyStatusColors, LeadStatusColors } from '../../constants/colors';
 import { FontSize, FontWeight, Radius, Shadow, Spacing } from '../../constants/theme';
-import { formatPrice, timeAgo, getFreshness, getInitials } from '../../utils/formatters';
+import { formatPrice, timeAgo, getFreshness } from '../../utils/formatters';
 import { PropertyStatus, LeadStatus } from '../../constants';
 
 export interface Property {

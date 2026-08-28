@@ -13,29 +13,97 @@ export interface PaginationPayload {
   limit: number;
 }
 
+export type MarketplaceTransactionType = 'RENTAL' | 'BUY_SELL';
+export type MarketplaceListingType = 'SUPPLY' | 'DEMAND';
+
+export interface BudgetPayload {
+  min?: number;
+  max?: number;
+}
+
+export interface MarketplaceFiltersPayload {
+  propertyTypes: string[];
+  configurations: string[];
+  categories: string[];
+  budget: BudgetPayload;
+}
+
 export interface SearchPropertiesPayload {
-  latitude?: number;
-  longitude?: number;
-  radiusKm?: number;
-  transactionType?: string;
-  category?: string;
-  page?: number;
-  limit?: number;
-  listingType?: string;
-  location?: LocationPayload;
-  pagination?: PaginationPayload;
-  [key: string]: any;
+  transactionType: MarketplaceTransactionType;
+  listingType: MarketplaceListingType;
+  category: string;
+  location: LocationPayload;
+  searchQuery: string;
+  budget?: BudgetPayload;
+  filters: MarketplaceFiltersPayload;
+  pagination: PaginationPayload;
+}
+
+export interface MarketplaceFeature {
+  icon: string;
+  label: string;
+}
+
+export interface MarketplaceListing {
+  id: string;
+  listingType: 'SUPPLY';
+  transactionType: MarketplaceTransactionType;
+  title: string;
+  subtitle?: string | null;
+  category?: string | null;
+  propertyType?: string | null;
+  bhk?: string | null;
+  status?: string | null;
+  price?: number | null;
+  priceUnit?: string | null;
+  builtUpSize?: number | null;
+  createdAt?: string | null;
+  lastRefreshedAt?: string | null;
+  freshnessCategory?: string | null;
+  isNearby: boolean;
+  distanceKm?: number | null;
+  locationLabel?: string | null;
+  locality?: string | null;
+  city?: string | null;
+  furnishing?: string | null;
+  facing?: string | null;
+  floorNumber?: number | null;
+  projectName?: string | null;
+  roadInfo?: string | null;
+  features: MarketplaceFeature[];
+}
+
+export interface MarketplaceRequirement {
+  id: string;
+  listingType: 'DEMAND';
+  transactionType: MarketplaceTransactionType;
+  title: string;
+  sub?: string | null;
+  propertyType?: string | null;
+  configurations: string[];
+  budget?: number | null;
+  budgetUnit?: string | null;
+  requiredSize?: number | null;
+  furnishingPreference?: string | null;
+  facingPreference?: string | null;
+  status?: string | null;
+  locality?: string | null;
+  city?: string | null;
+  distanceKm?: number | null;
+  createdAt?: string | null;
+  lastRefreshedAt?: string | null;
+  freshnessCategory?: string | null;
 }
 
 export interface SearchPropertiesResponse {
-  results?: any[];
-  data?: any[];
-  requirements?: any[];
-  totalCount?: number;
-  availableCount?: number;
-  activeCount?: number;
-  lookingCount?: number;
-  [key: string]: any;
+  status: string;
+  results: MarketplaceListing[];
+  requirements: MarketplaceRequirement[];
+  totalCount: number;
+  availableCount: number;
+  lookingCount: number;
+  page: number;
+  limit: number;
 }
 
 export const searchProperties = async (data: SearchPropertiesPayload): Promise<SearchPropertiesResponse> => {
@@ -56,12 +124,19 @@ export interface AddListingPayload {
   size?: number;
   furnishing?: string;
   facing?: string;
+  floor_number?: number;
   project_name?: string;
+  road_info?: string;
+  price_status?: 'FIXED' | 'NEGOTIABLE';
   city?: string;
+  latitude: number;
+  longitude: number;
   raw_message_text?: string;
   posted_by: string;
   requirement_ids: number[];
   sizes: Array<{ size_sqft: number; bhk: number }>;
+  photo_sharing_preference?: string;
+  details?: Record<string, unknown>;
 }
 
 export interface AddListingResponse {
@@ -76,6 +151,33 @@ export interface AddListingResponse {
 export const addListing = async (data: AddListingPayload): Promise<AddListingResponse> => {
   const response = await apiClient.post<AddListingResponse>('/listings', data);
   return response.data;
+};
+
+export interface UploadableListingMedia {
+  uri: string;
+  fileName: string;
+  mimeType: string;
+}
+
+export const uploadListingMedia = async (listingId: number, media: UploadableListingMedia[]) => {
+  if (media.length === 0) return { success: true, media: [] };
+
+  const uploaded: unknown[] = [];
+  for (const item of media) {
+    const formData = new FormData();
+    formData.append('files', {
+      uri: item.uri,
+      name: item.fileName,
+      type: item.mimeType,
+    } as any);
+
+    const response = await apiClient.post(`/listings/${listingId}/media`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    });
+    uploaded.push(...(response.data?.media || []));
+  }
+  return { success: true, media: uploaded };
 };
 
 export interface PropertyListingItem {

@@ -33,13 +33,21 @@ describe('getMyRequirements', () => {
       propertyType: 'APARTMENT',
       configurations: ['2 BHK'],
       description: 'Wants to Rent 2 BHK Flat / Apartment',
+      budgetMin: 30000,
       budgetMax: 50000,
+      budgetType: 'FIXED' as const,
       minimumSize: 1000,
+      maximumSize: 1400,
       city: 'Indore',
       locality: 'Vijay Nagar, Indore',
       lat: 22.75,
       lng: 75.89,
       radiusKm: 5,
+      preferredLocations: [
+        { city: 'Indore', locality: 'Vijay Nagar', lat: 22.75, lng: 75.89 },
+        { city: 'Indore', locality: 'Palasia', lat: 22.725, lng: 75.883 },
+      ],
+      preferredProjectNames: ['Omaxe Hills'],
     };
 
     await addRequirement(payload);

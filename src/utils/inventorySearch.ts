@@ -23,3 +23,23 @@ export const inventoryItemMatchesSearch = (
   // supports searches such as "2 bhk vijay" without requiring exact phrasing.
   return normalizedQuery.split(' ').every(term => searchableText.includes(term));
 };
+
+export const appendUniqueInventoryItems = <T extends object>(
+  current: T[],
+  incoming: T[],
+): T[] => {
+  const itemId = (item: T) => {
+    const keyedItem = item as Record<string, unknown>;
+    const id = keyedItem.listingId ?? keyedItem.requirementId ?? keyedItem.id;
+    return id === null || id === undefined ? null : String(id);
+  };
+  const seen = new Set(current.map(itemId).filter((id): id is string => id !== null));
+
+  return current.concat(incoming.filter(item => {
+    const id = itemId(item);
+    if (id === null) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }));
+};

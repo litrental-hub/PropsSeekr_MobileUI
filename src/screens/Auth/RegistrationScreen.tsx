@@ -19,7 +19,6 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
-import { useAppStore } from '../../store/appStore';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { register, sendEmailOTP } from '../../api/auth';
 
@@ -44,7 +43,7 @@ type RegistrationFormData = z.infer<typeof registrationSchema>;
 
 export default function RegistrationScreen() {
   const navigation = useNavigation<any>();
-  const { colors, type, isDark } = useAppTheme();
+  const { colors, type } = useAppTheme();
 
   const { control, handleSubmit, formState: { errors } } = useForm<RegistrationFormData>({
     resolver: zodResolver(registrationSchema),

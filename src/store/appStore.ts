@@ -10,6 +10,8 @@ export interface LocationState {
   lat: number;
   lng: number;
   radiusKm: number;
+  source: 'gps' | 'manual';
+  updatedAt: string;
 }
 
 interface AppState {
@@ -41,8 +43,9 @@ interface AppState {
   setWalletError: (brokerId: string | number, message: string) => void;
   resetWallet: () => void;
 
-  location: LocationState;
+  location: LocationState | null;
   setLocation: (location: LocationState) => void;
+  clearLocation: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -121,21 +124,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     const saved = storage.getString('active_location');
     if (saved) {
       try {
-        return JSON.parse(saved) as LocationState;
+        const parsed = JSON.parse(saved) as Partial<LocationState>;
+        if (
+          typeof parsed.lat === 'number' &&
+          typeof parsed.lng === 'number' &&
+          typeof parsed.radiusKm === 'number' &&
+          (parsed.source === 'gps' || parsed.source === 'manual') &&
+          typeof parsed.updatedAt === 'string'
+        ) {
+          return parsed as LocationState;
+        }
       } catch {
-        // Fallback if parsing fails
+        // Ignore malformed or legacy seeded location values.
       }
     }
-    return {
-      city: 'Indore',
-      locality: 'Vijay Nagar',
-      lat: 22.7533,
-      lng: 75.8937,
-      radiusKm: 5,
-    };
+    return null;
   })(),
   setLocation: location => {
     storage.set('active_location', JSON.stringify(location));
     set({ location });
+  },
+  clearLocation: () => {
+    storage.remove('active_location');
+    set({ location: null });
   },
 }));

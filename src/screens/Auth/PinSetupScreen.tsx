@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAuthStore } from '../../store/authStore';
@@ -9,7 +8,6 @@ import { checkBiometricSupport } from '../../utils/biometrics';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 export default function PinSetupScreen() {
-  const navigation = useNavigation<any>();
   const { colors, type } = useAppTheme();
   
   const setAppPin = useAuthStore(s => s.setAppPin);

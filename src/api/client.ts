@@ -43,7 +43,7 @@ apiClient.interceptors.response.use(
 
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return apiClient(originalRequest);
-      } catch (_) {
+      } catch {
         // Refresh failed — clear tokens and force global logout
         useAuthStore.getState().logout();
       }

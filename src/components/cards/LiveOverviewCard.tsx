@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Animated,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -43,20 +42,24 @@ export default function LiveOverviewCard({ metric }: Props) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [animVal, scaleVal]);
 
   // Pulse animation for warn type
   const pulseAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (metric.trendType === 'warn') {
-      Animated.loop(
+      const animation = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 0.5, duration: 800, useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
         ]),
-      ).start();
+      );
+      animation.start();
+      return () => animation.stop();
     }
-  }, [metric.trendType]);
+    pulseAnim.setValue(1);
+    return undefined;
+  }, [metric.trendType, pulseAnim]);
 
   const trendBgColor =
     metric.trendType === 'up'

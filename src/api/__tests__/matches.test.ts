@@ -1,5 +1,5 @@
 import apiClient from '../client';
-import { confirmMatch, getMatches, rejectMatch } from '../matches';
+import { confirmMatch, getMatchDetails, getMatches, rejectMatch } from '../matches';
 
 jest.mock('../client', () => ({
   __esModule: true,
@@ -102,6 +102,19 @@ describe('getMatches', () => {
 
     expect(mockedPost).toHaveBeenCalledWith('/user-matches/matches/500/confirm', payload);
     expect(result).toMatchObject({ connectionRequestId: 91, deliveryStatus: 'planned' });
+  });
+
+  it('loads the database-backed detail projection for an exact match', async () => {
+    const detail = {
+      matchId: 500,
+      isRevealed: false,
+      property: { media: [], details: {} },
+      requirement: { configurations: [] },
+    };
+    mockedGet.mockResolvedValue({ data: { success: true, data: detail } });
+
+    await expect(getMatchDetails(500)).resolves.toEqual(detail);
+    expect(mockedGet).toHaveBeenCalledWith('/user-matches/matches/500/details');
   });
 
   it('rejects a pending request with a structured reason', async () => {

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Colors } from '../../constants/colors';
 import { FontSize, FontWeight, Radius, Shadow, Spacing } from '../../constants/theme';
-import { SectionType, SECTION_TYPES } from '../../constants';
+import { SectionType } from '../../constants';
 import { useAppStore } from '../../store/appStore';
 
 const SECTIONS: { key: SectionType; emoji: string }[] = [

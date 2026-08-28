@@ -25,7 +25,6 @@ import {
   PROPERTY_TYPES,
   BHK_OPTIONS,
   FURNISHING_OPTIONS,
-  PROPERTY_STATUSES,
 } from '../../constants';
 
 // Simulated AI parse result

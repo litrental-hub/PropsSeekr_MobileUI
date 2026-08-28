@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -27,8 +27,22 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
   const slideAnim = useRef(new Animated.Value(SCREEN_H)).current;
   const isClosing = useRef(false);
 
-  const panResponder = useRef(
-    PanResponder.create({
+  const handleClose = useCallback(() => {
+    if (isClosing.current) return;
+    isClosing.current = true;
+    Animated.timing(slideAnim, {
+      toValue: SCREEN_H,
+      duration: 260,
+      useNativeDriver: true,
+    }).start(() => {
+      setIsRendered(false);
+      isClosing.current = false;
+      onClose();
+    });
+  }, [onClose, slideAnim]);
+
+  const panResponder = useMemo(
+    () => PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderMove: (_, g) => {
         if (g.dy > 0) slideAnim.setValue(g.dy);
@@ -44,15 +58,16 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
           }).start();
         }
       },
-    })
-  ).current;
+    }),
+    [handleClose, slideAnim],
+  );
 
   useEffect(() => {
     if (visible) {
       isClosing.current = false;
       slideAnim.setValue(SCREEN_H);
       setIsRendered(true);
-      setTimeout(() => {
+      const animationTimer = setTimeout(() => {
         Animated.spring(slideAnim, {
           toValue: 0,
           useNativeDriver: true,
@@ -60,24 +75,12 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
           speed: 14,
         }).start();
       }, 30);
+      return () => clearTimeout(animationTimer);
     } else if (isRendered && !isClosing.current) {
       handleClose();
     }
-  }, [visible]);
-
-  const handleClose = () => {
-    if (isClosing.current) return;
-    isClosing.current = true;
-    Animated.timing(slideAnim, {
-      toValue: SCREEN_H,
-      duration: 260,
-      useNativeDriver: true,
-    }).start(() => {
-      setIsRendered(false);
-      isClosing.current = false;
-      onClose();
-    });
-  };
+    return undefined;
+  }, [handleClose, isRendered, slideAnim, visible]);
 
   if (!isRendered) return null;
 

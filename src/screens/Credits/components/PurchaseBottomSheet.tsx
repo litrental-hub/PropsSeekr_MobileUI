@@ -16,9 +16,10 @@ import RazorpayCheckout from 'react-native-razorpay';
 import { createOrder, verifyPayment } from '../../../api/payment';
 import { useAuthStore } from '../../../store/authStore';
 import { refreshWallet } from '../../../services/walletSync';
+import { CreditPackViewModel } from '../../../services/creditPacksCache';
 
 interface PurchaseBottomSheetProps {
-  pack: any;
+  pack: CreditPackViewModel | null;
   visible: boolean;
   onClose: () => void;
   onSuccess: (newBalance: number) => void;

@@ -8,12 +8,9 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
-  Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { AddPropertyProvider, useAddPropertyForm } from './AddPropertyContext';
 import { useAppTheme, Brand } from '../../../theme/useAppTheme';
@@ -35,7 +32,6 @@ function AddPropertyForm() {
   const { t } = useTranslation();
   
   const [step, setStep] = React.useState(1);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const editData = route.params?.initialData;
 
@@ -138,7 +134,7 @@ function AddPropertyForm() {
 
       updateState(updates);
     }
-  }, [editData]);
+  }, [editData, updateState]);
 
   const themeColor = Brand.teal;
 
@@ -263,18 +259,14 @@ function AddPropertyForm() {
 
                 {/* Continue button — gradient when active, dimmed when disabled */}
                 {missingFields === 0 ? (
-                  <TouchableOpacity style={styles.submitBtnWrap} activeOpacity={0.85} onPress={handleNext} disabled={isSubmitting}>
+                  <TouchableOpacity style={styles.submitBtnWrap} activeOpacity={0.85} onPress={handleNext}>
                     <LinearGradient
                       colors={[Brand.blue, Brand.teal]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={styles.submitGrad}
                     >
-                      {isSubmitting ? (
-                        <ActivityIndicator color="#FFFFFF" />
-                      ) : (
-                        <Text style={styles.submitBtnText}>{step === 4 ? 'Submit' : t('addProperty.continue')}</Text>
-                      )}
+                      <Text style={styles.submitBtnText}>{t('addProperty.continue')}</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 ) : (
