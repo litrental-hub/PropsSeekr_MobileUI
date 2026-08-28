@@ -1,525 +1,221 @@
-# PropSeekr — AI Brain 🧠
-> **This is the single source of truth for the entire PropSeekrUI project.**  
-> Every new screen, component, feature, or bug fix must reference and update this file.  
-> Last updated: June 2026
+# PropSeekr mobile application context
 
----
+Last verified against `main` on 2026-08-28.
 
-## 📌 What is PropSeekr?
+This is the mobile repository's current source of truth. Read it before adding a screen, feature, API call, state transition, or business rule. Update it whenever implementation changes the product flow, UI/API contract, navigation, persistent state, integration, or build process. Never store secrets or customer data here.
 
-**PropSeekr** is a **broker-to-broker real estate platform** for India.  
-Brokers can post properties, post client requirements, match with other brokers, and unlock contact details using a **credit system**.
+The backend companion is `PropSeekrMobileAPI/PropsSeekr-MobileAPI/APPLICATION_CONTEXT.md` in the shared workspace. Backend code and the database are authoritative for security, matching, wallet, and reveal decisions.
 
-### Core Value Proposition
-> *"Find. Match. Close."*
-- A broker has a property → finds another broker who has a buyer requirement
-- They match → one broker pays credits to unlock the other's contact
-- They close the deal together
+## Product model
 
-### Target Users
-- Real estate brokers in India (Tier 1 & 2 cities)
-- Primary launch city: **Indore, Madhya Pradesh**
-- Language style: Mix of Hindi + English ("Aaj dala", "Mera client hai", "Kiraya")
+PropSeekr is a broker-to-broker Indian real-estate marketplace: brokers publish property supply (listings) and client demand (requirements), receive compatible cross-broker matches, request a connection, and reveal contact details only after mutual consent.
 
----
+- A match connects one listing and one requirement from different brokers.
+- A match does not reveal a broker's identity or contact details.
+- A connection request is the mutual-consent workflow.
+- One token is charged to each broker only after both confirm and reveal succeeds.
+- A backend reveal record—not a UI label—is the authority to show contact data.
 
-## ⚙️ Backend Stack
+## Stack and local runtime
 
-| Item | Detail |
-|---|---|
-| **Framework** | **.NET 9 Web API** (C#) |
-| **Auth** | JWT Bearer tokens (access + refresh token pattern) |
-| **API version** | `/api/v1/` prefix |
-| **Dev URL (Android emulator)** | `http://10.0.2.2:5079/api/v1` |
-| **Dev URL (iOS simulator)** | `http://localhost:5079/api/v1` |
-| **Prod URL** | `https://api.propseekr.in/v1` *(to be set)* |
-| **API client file** | `src/api/client.ts` (Axios, JWT auto-attach, refresh interceptor) |
+- React Native 0.85.3, React 19.2, and TypeScript.
+- React Navigation native stack and bottom tabs.
+- Zustand with MMKV persistence.
+- Axios API client and a TanStack Query provider.
+- `react-native-maps`, Google provider on Android, plus device geolocation.
+- English, Hindi, and Marathi through react-i18next.
+- Hermes enabled.
 
-### API Client features (already built)
-- ✅ Axios instance with `baseURL`, `timeout: 15s`, JSON headers
-- ✅ Request interceptor: auto-attaches `Authorization: Bearer <token>` from MMKV
-- ✅ Response interceptor: on 401 → auto-calls `/auth/refresh`, retries original request
-- ✅ On refresh fail: clears tokens from storage (TODO: redirect to Login)
+The checked-in Android-emulator API URL is `http://10.0.2.2:5150/api/v1`. `10.0.2.2` reaches the host machine from an Android emulator. iOS, physical devices, and production require a platform/release-aware base URL. Centralize that work in `src/constants/index.ts`; do not scatter URLs through screens.
 
-### Expected .NET 9 API Endpoints (to be confirmed when shared)
+## App composition and navigation
 
-#### Auth
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/auth/send-otp` | Send OTP to mobile number |
-| POST | `/auth/verify-otp` | Verify OTP → returns JWT tokens |
-| POST | `/auth/refresh` | Refresh access token |
-| POST | `/auth/register` | Register new broker |
-| POST | `/auth/logout` | Invalidate refresh token |
+`App.tsx` provides gesture handling, safe areas, TanStack Query, a global error boundary, and `RootNavigator`.
 
-#### Properties
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/properties` | List properties (with filters) |
-| GET | `/properties/{id}` | Property detail |
-| POST | `/properties` | Create new listing |
-| PUT | `/properties/{id}` | Update listing |
-| DELETE | `/properties/{id}` | Remove listing |
-
-#### Requirements
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/requirements` | List requirements |
-| POST | `/requirements` | Post new requirement |
-| PUT | `/requirements/{id}` | Update requirement |
-
-#### Matches
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/matches` | My matches |
-| POST | `/matches/{id}/unlock` | Unlock contact (costs credits) |
-
-#### Credits
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/credits/balance` | Current balance |
-| POST | `/credits/purchase` | Buy credit pack |
-| GET | `/credits/history` | Transaction history |
-
-#### Broker Profile
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/profile` | My profile |
-| PUT | `/profile` | Update profile |
-
-> **Note:** All endpoints will be confirmed and updated once you share the .NET 9 API project.
-
----
-
-## 🗂️ Project Structure
-
-```
-PropSeekrUI/
-├── src/
-│   ├── api/
-│   │   └── client.ts              # Axios API client
-│   ├── assets/images/
-│   │   └── logo.png               # Static logo (not used — we use vector)
-│   ├── components/
-│   │   ├── PropSeekrLogo.tsx      # ✅ MASTER vector logo component
-│   │   ├── cards/
-│   │   │   ├── LiveOverviewCard.tsx
-│   │   │   └── PropertyCard.tsx
-│   │   ├── common/
-│   │   │   └── SectionToggle.tsx
-│   │   └── modals/
-│   │       ├── CreateRequirementModal.tsx
-│   │       └── ListPropertyModal.tsx
-│   ├── constants/
-│   │   ├── colors.ts              # Legacy color constants
-│   │   ├── index.ts
-│   │   └── theme.ts
-│   ├── navigation/
-│   │   ├── RootNavigator.tsx      # Stack navigator (Auth → Main)
-│   │   └── BottomTabNavigator.tsx # Tab bar for main app
-│   ├── screens/
-│   │   ├── Auth/
-│   │   │   ├── LoginScreen.tsx        ✅ Built & themed
-│   │   │   ├── RegistrationScreen.tsx ✅ Built & themed
-│   │   │   └── OTPScreen.tsx          🔲 Exists, needs theme
-│   │   ├── Dashboard/
-│   │   │   └── DashboardScreen.tsx    ✅ Built & themed
-│   │   ├── Credits/
-│   │   │   ├── BuyCreditsScreen.tsx   🔲 Exists, needs theme
-│   │   │   └── CreditsScreen.tsx      🔲 Exists, needs theme
-│   │   ├── Matches/
-│   │   │   ├── MatchesScreen.tsx      🔲 Exists, needs theme
-│   │   │   └── MatchDetailScreen.tsx  🔲 Exists, needs theme
-│   │   ├── Profile/
-│   │   │   ├── ProfileScreen.tsx      🔲 Exists, needs theme
-│   │   │   └── NotificationsScreen.tsx 🔲 Exists, needs theme
-│   │   ├── Properties/
-│   │   │   ├── AddPropertyScreen.tsx  🔲 Exists, needs theme
-│   │   │   ├── InventoryScreen.tsx    🔲 Exists, needs theme
-│   │   │   └── PropertyDetailScreen.tsx 🔲 Exists, needs theme
-│   │   ├── Requirements/
-│   │   │   ├── AddRequirementScreen.tsx 🔲 Exists, needs theme
-│   │   │   └── RequirementDetailScreen.tsx 🔲 Exists, needs theme
-│   │   └── Search/
-│   │       └── SearchScreen.tsx       🔲 Exists, needs theme
-│   ├── store/
-│   │   ├── appStore.ts            # Zustand: theme, sectionType, credits
-│   │   └── authStore.ts           # Zustand: user auth state
-│   ├── theme/
-│   │   └── useAppTheme.ts         # ✅ Dynamic Light/Dark theme hook
-│   └── utils/
-│       ├── formatters.ts
-│       └── storage.ts
-├── skills.md                      # Design system reference (AUTH screens)
-└── BRAIN.md                       # ← THIS FILE (full project AI brain)
+```text
+No token -> Login -> Registration / OTP
+Authenticated + locked -> LockScreen
+Authenticated + no PIN -> PinSetup
+Authenticated + unlocked -> MainTabs
+  Dashboard | Matches | MyProperties | Credits | Profile
+  plus AddProperty, AddRequirement, details, Search, Notifications, Settings
 ```
 
-**Legend:** ✅ Done | 🔲 Exists but not themed | ❌ Not built yet
+The app locks when backgrounded if an app PIN exists, unless a controlled native flow temporarily disables the lock.
 
----
+## Identity and shared state
 
-## 🎨 Theme System
+`authStore` owns the user, access token, app PIN, biometric preference, and lock state. The user GUID identifies the account; the numeric `brokerId` owns listings, requirements, wallet, notifications, and matches. Never interchange them.
 
-### Dynamic Theme Engine
-File: `src/theme/useAppTheme.ts`
+`appStore` owns:
 
-```ts
-import { useAppTheme, Brand } from '../theme/useAppTheme';
+- light/dark theme;
+- Rentals versus Buy/Sell section;
+- notification/match badges;
+- authoritative wallet snapshot and sync state;
+- active city, locality, coordinates, and radius.
 
-// In any component:
-const { colors, Brand, type, isDark } = useAppTheme();
+Wallet values are refreshed from `/brokers/{brokerId}/wallet` at startup/resume and after connection actions. Do not mutate the displayed balance optimistically as the source of truth.
+
+`src/api/client.ts` is the single Axios client and attaches the bearer token. Known gap: its 401 interceptor calls `POST /auth/refresh`, but the current API has no refresh endpoint or persisted refresh-token flow. Expired tokens therefore cause logout. Do not promise silent renewal until both sides implement it.
+
+## Current journeys
+
+### Authentication
+
+Registration posts account/KYC fields and moves to OTP. Unified login accepts an admin username, mobile, or email plus password. Tokens/profile persist locally, then PIN setup and optional biometrics protect later access. Recheck mobile OTP field names against backend DTOs before changing that path.
+
+### Dashboard
+
+The dashboard toggles Rentals/Buy-Sell, detects location, opens the map picker, filters by category/text, shows token/notification context, and exposes add-property, add-requirement, and bulk text upload.
+
+It currently combines search results, matches, and owned listings into one card shape and de-duplicates by title plus subtitle. Individual failures are swallowed for resilience. This mixes marketplace, matched, and owned semantics; preserve it unless a feature deliberately separates these feeds.
+
+Known backend seam: non-admin `/search/properties` uses legacy `PropertyRequests`; admin search reads canonical listings/requirements. Canonical inventory and matching use listings and requirements.
+
+### Google Map and location
+
+`SearchScreen` renders `react-native-maps`; Android uses `PROVIDER_GOOGLE`. It supports marker placement, a radius circle, GPS, text search, and persistent location.
+
+The Android Maps key is injected through the manifest placeholder from `GOOGLE_MAPS_API_KEY` in `android/local.properties` or the environment. Never commit it. Restrict it to the Android application ID and signing certificate fingerprints and enable only required APIs.
+
+Map rendering is Google, but `src/utils/location.ts` currently uses OpenStreetMap Nominatim for forward/reverse geocoding. Enabling the Android Maps SDK does not switch geocoding to Google. A migration must address restrictions, rate limits, attribution/privacy, and errors.
+
+### Add property
+
+The active multi-step flow is under `src/screens/Properties/AddProperty/`, ending in `ReviewCardSection`. It maps UI values to backend tokens (`RENT`/`SELL`, `APARTMENT`, `BUNGALOW`, `PER_MONTH`, sizes/configuration) and posts `/listings`. The API derives the broker from the JWT.
+
+The form requests GPS and reads coordinates, but does not send them; the current listing contract has no direct coordinate fields. Do not claim manual listing radius matching is implemented.
+
+The success alert does not inspect backend `embedding_completed`; it says matching began for any successful create. If status is shown, distinguish completed from failed/retry-required.
+
+Inventory passes `editId` and initial data, but submission still creates a new listing. This is not a complete edit workflow.
+
+### Add requirement
+
+`AddRequirementScreen` maps transaction/property/configuration, converts area to square feet, collects budget, city/locality, GPS, radius, furnishing/facing, and posts `/requirements`.
+
+Current backend behavior validates location/GPS/radius but persists only city plus locality text in `RawMessageText`; canonical locality IDs/coordinates/radius remain unset. Do not claim exact manual radius matching until persistence is completed.
+
+The screen can prefill initial data, but submission creates a new requirement; there is no canonical update endpoint.
+
+### My Listings and Requirements
+
+`MyPropertiesScreen` loads both collections on focus:
+
+- `GET /listings/mine?page=1&limit=20&transactionType=...`
+- `GET /requirements/mine?page=1&limit=20&transactionType=...`
+
+Normal users see broker-owned data; admins intentionally see all brokers. Cards use backend `matchCount` or `matchesFound`. Only the first 20 inventory rows are currently loaded; aggregate totals may be larger.
+
+A listing count opens Matches with `listingId`; a requirement count opens with `requirementId`. `resolveMatchSourceIds` protects this direction. Never pass one as the other.
+
+### Matches and connection
+
+`MatchesScreen` calls `GET /user-matches` with pagination, transaction type, and optional listing, requirement, or exact match ID. It supports infinite paging, refresh, quality tabs, source headers, and notification deep links.
+
+The API response includes both match sides, score, current broker role, state, confirmation expiry, connection request direction/status, reveal state, and contact only after reveal. Use backend aggregate totals; loaded array length is only the current pages.
+
+Critical flow:
+
+```text
+Broker A taps Unlock
+ -> POST /user-matches/matches/{matchId}/confirm
+ -> pending for four hours; no charge; no contact
+Broker B accepts through the same endpoint or rejects
+ -> if both confirm and both have a token:
+    backend atomically reveals and deducts one token from each
 ```
 
-### Brand Tokens (NEVER change, same in both themes)
-```ts
-Brand.blue     = '#2563EB'  // Primary blue
-Brand.teal     = '#10B981'  // Primary teal
-Brand.white    = '#FFFFFF'
-Brand.blueBorder = 'rgba(37,99,235,0.3)'
+Rules:
+
+- Never use a direct reveal endpoint for regular unlocking.
+- Never infer contacts from listing, requirement, broker, notification, or cache.
+- Requestor sees waiting; only the receiving broker sees Accept/Reject.
+- Rejection, expiration, or insufficient credit spends nothing.
+- `credit_required` is not success.
+- Refresh the wallet after a response that can reveal/charge.
+- WhatsApp delivery for an unregistered broker is planned, not sent.
+- Reading a notification does not accept a request.
+
+See `MATCHING_FLOW_UI_CONTEXT.md` for detailed state/copy rules.
+
+Known mismatch: API aggregate quality bands are 90/75, while current match cards and SQL tiers use 80/60. Resolve SQL, API, UI, and tests as one product decision.
+
+### Notifications, wallet, payments, upload
+
+The active notification API uses numeric broker routes under `/brokers/{brokerId}/notifications`. Taps can deep-link to an exact match. Unread count polls every 30 seconds.
+
+Wallet and ledger use `/brokers/{brokerId}/wallet` and `/credit-transactions`. Packs use `/credit-packs`; Razorpay uses `/payment/order` and `/payment/verify`.
+
+Bulk `.txt` ingestion requests a presigned URL, uploads directly to S3, then calls `/file-processor/pipeline`. The server owns the bucket and runs extraction, ingestion, Gemini embeddings, and matching.
+
+## Design system
+
+The active authority is `src/theme/useAppTheme.ts` plus `src/constants/theme.ts`, not older hard-coded examples in `skills.md`.
+
+- Brand blue `#2563EB`, teal `#10B981`, blue-to-teal primary gradient.
+- Dynamic palettes provide surfaces, text, borders, and semantic colors.
+- Reuse spacing, radius, font, card, shadow, button, and `PropSeekrLogo` tokens.
+- Use safe areas, theme-aware status bars, accessibility labels, and all relevant loading/empty/error states.
+- User strings belong in the English/Hindi/Marathi locale files.
+
+An older static `Colors` palette remains in shell/tab code. Prefer the dynamic system for new screens; do not introduce a third palette.
+
+## Compatibility and known gaps
+
+- `createRequirement()` calls nonexistent `/requirements/create`; the active form uses `addRequirement()`.
+- `revealMatch()` exists as compatibility code; the active UI uses `confirmMatch()`.
+- `admin.ts` exposes internal maintenance operations, not normal user actions.
+- Older detail screens/modals coexist with active flows.
+- Dashboard mock constants supply fallback presentation values.
+- Several DTOs allow broad `any` shapes; narrow contracts instead of extending ambiguity.
+- Android release currently uses debug signing.
+- `android/gradle.properties` contains Windows-specific Node/Java paths and `newArchEnabled=false`, which RN 0.85 warns is unsupported.
+
+## Build and verification
+
+```bash
+npm run start
+npm test -- --runInBand
+npm run lint
+cd android
+./gradlew assembleDebug
 ```
 
-### Dynamic Color Tokens
-| Token | Dark Mode | Light Mode |
-|---|---|---|
-| `colors.navy` | `#050D1F` | `#FFFFFF` |
-| `colors.bgStart` | `#0B1B4D` | `#FFFFFF` |
-| `colors.bgMid` | `#050D1F` | `#F8FAFF` |
-| `colors.bgEnd` | `#020810` | `#F0F4F8` |
-| `colors.cardBg` | `rgba(255,255,255,0.07)` | `#FFFFFF` |
-| `colors.cardBgLight` | `rgba(255,255,255,0.1)` | `#F8FAFF` |
-| `colors.inputBg` | `rgba(37,99,235,0.10)` | `#FFFFFF` |
-| `colors.textPrimary` | `#FFFFFF` | `#050D1F` |
-| `colors.textSecondary` | `rgba(255,255,255,0.5)` | `#64748B` |
-| `colors.textDim` | `rgba(255,255,255,0.3)` | `#94A3B8` |
-| `colors.borderFaint` | `rgba(255,255,255,0.1)` | `rgba(0,0,0,0.05)` |
-| `colors.successFaint` | `rgba(16,185,129,0.15)` | `#DCFCE7` |
-| `colors.errorFaint` | `rgba(239,68,68,0.12)` | `#FEE2E2` |
-| `colors.errorText` | `#F87171` | `#EF4444` |
+On the current Mac, the Windows Java property needs a Java 17 override:
 
-### Theme Toggle
-- Stored in: `useAppStore` → `theme: 'dark' | 'light'`
-- Persisted to device storage via MMKV
-- Toggle function: `useAppStore(s => s.toggleTheme)`
-- Toggle button on: **ProfileScreen** (only)
-
----
-
-## 🏠 PropSeekrLogo Component
-
-File: `src/components/PropSeekrLogo.tsx`
-
-### Props
-```ts
-<PropSeekrLogo 
-  size={88}           // scales everything proportionally
-  theme="dark"        // 'dark' | 'light' — controls roof & text color
-  layout="vertical"   // 'vertical' (auth) | 'horizontal' (dashboard header)
-/>
+```bash
+./gradlew -Dorg.gradle.java.home=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home assembleDebug
 ```
 
-### Usage per screen
-| Screen | size | layout |
-|---|---|---|
-| Login | `88` | `vertical` |
-| Registration | `64` | `vertical` |
-| Dashboard header | `30` | `horizontal` |
+Metro normally uses 8081; the API uses 5150. They are separate processes.
 
-### Logo anatomy (all proportional to `size`)
-- **Chevron roof**: two rotated arms, white in dark / navy in light
-- **Chimney**: at `roofW * 0.75` (right arm), `roofH * 0.4` (lower on arm)
-- **2×2 window**: blue→teal gradient matching Seekr text
-  - Top-left: `#2563EB` | Top-right: `#1799C4`
-  - Bottom-left: `#1E7FD8` | Bottom-right: `#10B981`
-- **"Prop"**: white/navy text
-- **"Seekr"**: 5-character gradient — `#2563EB → #1E7FD8 → #1799C4 → #10B2B0 → #10B981`
+## Future-change checklist
 
----
+1. Identify user/admin behavior and GUID-versus-broker identity.
+2. Preserve listing-versus-requirement direction.
+3. Verify the endpoint and DTO exist in the current API.
+4. Keep aggregate totals separate from loaded pages.
+5. Trace new listing/requirement fields through persistence, embedding, matching, and display.
+6. Preserve deterministic match constraints before semantic scoring.
+7. Preserve mutual consent, reveal gating, atomic two-wallet charge, and retry safety.
+8. Refresh wallet state from the backend after mutations.
+9. Treat Google map rendering, geocoding, GPS, and database locality as separate layers.
+10. Add focused tests and update this file when behavior changes.
 
-## 🗺️ Navigation Structure
+## Code map
 
-```
-RootNavigator (Stack)
-├── Auth Group (when !isAuthenticated)
-│   ├── Login
-│   ├── Registration
-│   └── OTP
-└── Main Group (when isAuthenticated)
-    ├── Dashboard (Stack screen)
-    ├── BuyCredits (Stack screen)
-    └── BottomTabNavigator
-        ├── Dashboard tab
-        ├── Search tab
-        ├── Matches tab
-        ├── Inventory (Properties) tab
-        └── Profile tab
-```
-
----
-
-## 🗃️ State Management
-
-### authStore (`src/store/authStore.ts`)
-```ts
-{
-  user: User | null,
-  accessToken: string | null,
-  refreshToken: string | null,
-  isAuthenticated: boolean,
-  setAuth(user, accessToken, refreshToken): void,
-  clearAuth(): void,
-}
-```
-
-### appStore (`src/store/appStore.ts`)
-```ts
-{
-  theme: 'dark' | 'light',           // persisted
-  sectionType: 'Rentals' | 'Buying', // persisted
-  creditsBalance: number,             // persisted
-  toggleTheme(): void,
-  setTheme(theme): void,
-  setSectionType(type): void,
-}
-```
-
----
-
-## 📊 Core Data Models
-
-### Property
-```ts
-{
-  id: string,
-  title: string,         // e.g. "2BHK Semi-Furnished Flat"
-  subtitle: string,      // area + floor + facing
-  type: 'Residential' | 'Commercial' | 'Plot' | 'Villa',
-  section: 'Rentals' | 'Buying',
-  kiraya?: string,       // rental price
-  price?: string,        // buy/sell price
-  area: string,          // sqft
-  available: string,     // availability date
-  features: Feature[],   // { icon, label }
-  preferences: Preference[], // owner preferences (allowed: boolean)
-  location: string,
-  brokerName: string,
-  brokerInitials: string,
-  unlockCost: number,    // credits needed to unlock
-  isNearby: boolean,
-  freshLabel: string,    // "Aaj dala" etc.
-}
-```
-
-### Requirement (Client Need)
-```ts
-{
-  id: string,
-  title: string,         // e.g. "3BHK flat for family"
-  sub: string,           // budget + area
-  initials: string,      // client initials
-  color: string,         // avatar bg color
-}
-```
-
-### User / Broker
-```ts
-{
-  id: string,
-  name: string,
-  phone: string,
-  agency: string,
-  locality: string,
-  isAadhaarVerified: boolean,
-  isReraVerified: boolean,
-  ratingScore: number,
-}
-```
-
----
-
-## 🖥️ Screens — Detailed Status
-
-### ✅ LoginScreen
-- **Route**: `Login`
-- **Features**: Mobile number input, Send OTP CTA, nav to Registration
-- **Mock**: Pressing "Send OTP" logs in directly (bypasses OTP for now)
-
-### ✅ RegistrationScreen
-- **Route**: `Registration`
-- **Features**: Name, Mobile, Aadhaar/PAN (KYC), GST, RERA
-- **Validation**: react-hook-form + zod
-
-### ✅ DashboardScreen
-- **Route**: `Dashboard`
-- **Features**:
-  - Header: Logo (horizontal) + Rental/Buy toggle + Credits chip
-  - Location bar: Current area + listing count
-  - Search box + Filter button
-  - BHK filter chips (Sab, 1BHK, 2BHK, 3BHK, Commercial, Plot, Villa)
-  - Tabs: Available / Looking / Matched (with count badges)
-  - "AAPKE AAS-PAAS" section with PropertyCard
-  - "ACTIVE REQUIREMENTS" section with RequirementRow
-  - FAB (+) button
-- **Data**: Currently mock data
-
-### 🔲 OTPScreen
-- Exists, needs theme applied
-
-### 🔲 BuyCreditsScreen / CreditsScreen
-- Credit purchase flow — needs design + theme
-
-### 🔲 MatchesScreen / MatchDetailScreen
-- Where matched properties/requirements are shown
-
-### ✅ ProfileScreen / NotificationsScreen
-- Broker profile with editable details (Photo, Name, GST, Address, Email)
-- Theme toggle: ☀️/🌙 switch is exclusively available here
-- Log Out button
-- RERA/Aadhaar badges, rating (planned)
-
-### 🔲 Properties screens (Add/Inventory/Detail)
-- Broker's own listed properties
-
-### 🔲 Requirements screens (Add/Detail)
-- Client requirements broker has
-
-### 🔲 SearchScreen
-- Search across the platform
-
----
-
-## 🎨 Design System Rules (apply to ALL screens)
-
-### 1. Every screen must have
-```tsx
-// Background gradient
-<LinearGradient colors={[colors.bgStart, colors.bgMid, colors.bgEnd]} 
-  locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
-
-// Top accent bar
-<LinearGradient colors={[Brand.blue, Brand.teal]} 
-  start={{x:0,y:0}} end={{x:1,y:0}}
-  style={{ height: 3, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }} />
-
-// StatusBar
-<StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.navy} />
-```
-
-### 2. Theme hook — import in every screen
-```tsx
-import { useAppTheme, Brand } from '../../theme/useAppTheme';
-const { colors, type, isDark } = useAppTheme();
-```
-
-### 3. Glass card pattern (dark theme)
-```tsx
-backgroundColor: colors.cardBg,   // rgba(255,255,255,0.07) in dark
-borderWidth: 1.5,
-borderColor: Brand.blueBorder,     // rgba(37,99,235,0.3)
-borderRadius: 18,
-```
-
-### 4. Primary gradient button
-```tsx
-<LinearGradient colors={[Brand.blue, '#1A8CD8', Brand.teal]}
-  start={{x:0,y:0}} end={{x:1,y:0}}
-  style={{ borderRadius: 16, paddingVertical: 16, alignItems: 'center',
-    shadowColor: Brand.blue, shadowOffset: {width:0, height:6},
-    shadowOpacity: 0.45, shadowRadius: 14, elevation: 8 }}
->
-  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 16 }}>Label →</Text>
-</LinearGradient>
-```
-
-### 5. Typography scale
-| Use | fontSize | fontWeight | color |
-|---|---|---|---|
-| Screen headline | 30 | 800 | `colors.textPrimary` |
-| Card title | 17 | 800 | `colors.textPrimary` |
-| Body | 14 | 400 | `colors.textSecondary` |
-| Label | 13 | 600 | `colors.textSecondary` |
-| Caption | 11 | 500 | `colors.textDim` |
-| Micro label | 9 | 700 | `colors.textDim` |
-
-### 6. Section header pattern
-```tsx
-<Text style={{ fontSize: 11, fontWeight: '800', color: Brand.teal, 
-  letterSpacing: 1.5, textTransform: 'uppercase' }}>
-  SECTION TITLE
-</Text>
-```
-
----
-
-## 💡 Key Technical Decisions
-
-| Decision | Choice | Reason |
-|---|---|---|
-| State management | Zustand | Simple, no boilerplate |
-| Storage | MMKV (via zustand persist) | Fast native key-value store |
-| Form validation | react-hook-form + zod | Type-safe, performant |
-| Gradients | react-native-linear-gradient | Native performance |
-| Navigation | @react-navigation/native-stack | Standard RN navigation |
-| Logo | Pure RN Vector (no SVG) | No library dep, scales perfectly |
-| Theme | Custom `useAppTheme` hook | Full control, persisted |
-
----
-
-## 🔮 Features Roadmap (Not Built Yet)
-
-| Priority | Feature | Screen(s) | Notes |
-|---|---|---|---|
-| 🔴 High | OTP Verification | OTPScreen | 6-digit OTP input, resend timer |
-| 🔴 High | Property Listing Flow | AddPropertyScreen | Multi-step form |
-| 🔴 High | Requirement Posting | AddRequirementScreen | Client budget, BHK, area |
-| 🔴 High | Credit Purchase | BuyCreditsScreen | Razorpay/UPI integration |
-| 🟡 Medium | Broker Profile | ProfileScreen | KYC badges, rating, listings count |
-| 🟡 Medium | Matches Feed | MatchesScreen | Properties matching my client needs |
-| 🟡 Medium | Search & Filters | SearchScreen | Area, BHK, budget filters |
-| 🟡 Medium | Property Detail | PropertyDetailScreen | Full property view, unlock button |
-| 🟢 Low | Notifications | NotificationsScreen | Match alerts, unlock alerts |
-| 🟢 Low | Inventory | InventoryScreen | My listed properties |
-
----
-
-## 📏 Do's & Don'ts
-
-| ✅ Do | ❌ Don't |
-|---|---|
-| Always use `useAppTheme()` for colors | Hardcode hex colors in components |
-| Import `Brand` from `useAppTheme` | Redefine Brand constants locally |
-| Use `colors.*` tokens for all text/bg | Use `Brand.*` for text/backgrounds (Brand is only for blue/teal/white) |
-| Proportional sizing (`size * 0.x`) | Fixed pixel sizes in reusable components |
-| `layout="horizontal"` for small header logos | Use vertical layout in tight header rows |
-| Keep Hindi/English mix in UI copy | Use pure English (breaks the brand voice) |
-| `activeOpacity={0.85}` on all buttons | Use default opacity |
-| `SafeAreaView edges={['top','bottom']}` | Skip safe area insets |
-
----
-
-## 🔧 Troubleshooting & Android Emulator Setup
-
-### 1. Metro Port Config / "Unable to load script"
-If the emulator fails to fetch the JavaScript bundle from the host and shows a red "Unable to load script" screen, it is likely due to a Metro server port mismatch (usually defaulting to `8082` because port `8081` was occupied at some point).
-
-**Resolution steps:**
-1. Check the emulator's current bundle configuration in the React Native Dev Menu (`Cmd+M` on macOS / `adb shell input keyevent 82` -> **Change Bundle Location**).
-2. If it is configured to `10.0.2.2:8082` (or `8082` is mentioned in the instructions), launch Metro explicitly on port `8082`:
-   ```bash
-   npm run start -- --port 8082
-   ```
-3. Set up double ADB reverse port mappings so both `8081` and `8082` requests from the emulator are forwarded to Metro's active port `8082` on the host:
-   ```bash
-   export PATH="$HOME/Library/Android/sdk/platform-tools:$PATH"
-   adb reverse tcp:8081 tcp:8082
-   adb reverse tcp:8082 tcp:8082
-   ```
-
-### 2. White Screen on Startup
-If the app loads the bundle but displays a blank/white screen instead of rendering the `Login` or `Dashboard` UI:
-- **`enableScreens(false)` issue**: Setting `enableScreens(false)` under `react-native-screens` can crash/freeze the native stack navigator on Android. Ensure it is set to `enableScreens(true)` in [RootNavigator.tsx](file:///Users/shubhammali/Personal%20Project/PropSeekrUI/src/navigation/RootNavigator.tsx).
-- **Stale MMKV Cache**: Clear the app storage to reset state:
-  ```bash
-  export PATH="$HOME/Library/Android/sdk/platform-tools:$PATH"
-  adb shell pm clear com.propseekrui
-  ```
-
+- `App.tsx`: providers/error boundary.
+- `src/navigation/`: auth/PIN/main route graph.
+- `src/api/`: backend adapters.
+- `src/store/`: persistent state.
+- `src/screens/Dashboard/`: combined discovery feed and bulk upload.
+- `src/screens/Properties/`, `Requirements/`: canonical forms/inventory.
+- `src/screens/Matches/`: pagination and mutual connection.
+- `src/screens/Credits/`: wallet, ledger, packs.
+- `src/screens/Search/`: Google map picker.
+- `src/utils/location.ts`: GPS and Nominatim.
+- `src/utils/matchFilters.ts`: source-ID routing.
+- `src/services/walletSync.ts`: authoritative wallet refresh.
+- `MATCHING_FLOW_UI_CONTEXT.md`: detailed match UX contract.
