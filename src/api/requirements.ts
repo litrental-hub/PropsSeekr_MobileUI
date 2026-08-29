@@ -28,13 +28,23 @@ export interface RequirementPayload {
   additionalNotes?: string;
 }
 
-export const addRequirement = async (data: RequirementPayload) => {
-  const response = await apiClient.post('/requirements', data);
+export interface RequirementSaveResponse {
+  success?: boolean;
+  requirementId?: string;
+  message?: string;
+  embeddingJobId?: string;
+  embedding_job_id?: string;
+  embeddingStatus?: 'queued' | 'processing' | 'completed' | 'failed';
+  embedding_status?: 'queued' | 'processing' | 'completed' | 'failed';
+}
+
+export const addRequirement = async (data: RequirementPayload): Promise<RequirementSaveResponse> => {
+  const response = await apiClient.post<RequirementSaveResponse>('/requirements', data);
   return response.data;
 };
 
-export const updateRequirement = async (requirementId: string | number, data: RequirementPayload) => {
-  const response = await apiClient.patch(`/requirements/${encodeURIComponent(String(requirementId))}`, data);
+export const updateRequirement = async (requirementId: string | number, data: RequirementPayload): Promise<RequirementSaveResponse> => {
+  const response = await apiClient.patch<RequirementSaveResponse>(`/requirements/${encodeURIComponent(String(requirementId))}`, data);
   return response.data;
 };
 

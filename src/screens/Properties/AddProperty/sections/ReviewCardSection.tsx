@@ -8,6 +8,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { FormInput } from '../../../../components/forms/FormInput';
 import { useTranslation } from 'react-i18next';
 import { addListing, updateListing, uploadListingMedia } from '../../../../api/property';
+import { getEmbeddingJob, retryEmbeddingJob } from '../../../../api/embeddingJobs';
 import { useAuthStore } from '../../../../store/authStore';
 import { forwardGeocode } from '../../../../utils/location';
 
@@ -185,10 +186,32 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
             mediaWarning = `\n\nThe listing was saved, but media upload failed: ${mediaError?.response?.data?.message || mediaError?.message || 'Please try again later.'}`;
           }
         }
+        let matchingMessage = 'Matching is queued and will update automatically in the background.';
+        if (res.embedding_job_id) {
+          try {
+            const job = await getEmbeddingJob(res.embedding_job_id);
+            if (job.status === 'processing') matchingMessage = 'Matching is now processing in the background.';
+            if (job.status === 'completed') matchingMessage = 'Matching has completed.';
+            if (job.status === 'failed') {
+              setIsSubmitting(false);
+              Alert.alert(
+                'Matching needs a retry',
+                job.last_error || 'The listing was saved, but matching could not be completed.',
+                [
+                  { text: 'Later', style: 'cancel' },
+                  { text: 'Retry matching', onPress: () => retryEmbeddingJob(res.embedding_job_id!).catch(() => Alert.alert('Retry unavailable', 'Please try again shortly.')) },
+                ],
+              );
+              return;
+            }
+          } catch {
+            // The listing save succeeded. A transient status lookup must not report it as failed.
+          }
+        }
         setIsSubmitting(false);
         Alert.alert(
           isEditing ? '✅ Property Updated Successfully!' : '✅ Property Listed Successfully!',
-          `Your property has been saved (ID: ${res.listing_id || res.listingId || listingId || 'N/A'}).${mediaWarning}`,
+          `Your property has been saved (ID: ${res.listing_id || res.listingId || listingId || 'N/A'}). ${matchingMessage}${mediaWarning}`,
           [
             {
               text: 'View My Listings',

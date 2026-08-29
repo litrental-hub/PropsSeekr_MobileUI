@@ -20,6 +20,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { addRequirement, updateRequirement } from '../../api/requirements';
+import { getEmbeddingJob, retryEmbeddingJob } from '../../api/embeddingJobs';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PROPERTY_TYPES, BHK_OPTIONS } from '../../constants';
 import { forwardGeocode, reverseGeocode } from '../../utils/location';
@@ -372,9 +373,31 @@ export default function AddRequirementScreen() {
       const data = isEditing ? await updateRequirement(requirementId, payload) : await addRequirement(payload);
 
       if (data) {
+        const jobId = (data.embedding_job_id ?? data.embeddingJobId) as string | undefined;
+        let matchingMessage = 'Matching is queued and will update automatically in the background.';
+        if (jobId) {
+          try {
+            const job = await getEmbeddingJob(jobId);
+            if (job.status === 'processing') matchingMessage = 'Matching is now processing in the background.';
+            if (job.status === 'completed') matchingMessage = 'Matching has completed.';
+            if (job.status === 'failed') {
+              Alert.alert(
+                'Matching needs a retry',
+                job.last_error || 'The requirement was saved, but matching could not be completed.',
+                [
+                  { text: 'Later', style: 'cancel' },
+                  { text: 'Retry matching', onPress: () => retryEmbeddingJob(jobId).catch(() => undefined) },
+                ],
+              );
+              return;
+            }
+          } catch {
+            // The save is durable even when an immediate status read is unavailable.
+          }
+        }
         Alert.alert(
           '✅ Requirement Submitted!',
-          'Requirement submitted successfully. Matching has started.',
+          `Requirement submitted successfully. ${matchingMessage}`,
           [{ text: 'Done', onPress: () => navigation.goBack() }],
         );
       } else {
