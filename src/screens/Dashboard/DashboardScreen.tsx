@@ -471,9 +471,9 @@ export default function DashboardScreen() {
                       return;
                     }
 
-                    Alert.alert('Uploading', `Uploading and processing ${fileName}... Please wait.`);
-                    await uploadBulkTxtFile(pickerResult.uri, fileName);
-                    Alert.alert('Processing Completed 🎉', 'Your bulk file was uploaded and processing has completed.');
+                    Alert.alert('Uploading', `Uploading ${fileName}. Processing will continue safely in the background.`);
+                    const importJobId = await uploadBulkTxtFile(pickerResult.uri, fileName);
+                    Alert.alert('Import queued', `Your file was uploaded and queued for processing (job ${importJobId}). Listings, requirements, embeddings, and matches will update automatically.`);
                   } catch (err: any) {
                     if (isErrorWithCode(err) && err.code === errorCodes.OPERATION_CANCELED) {
                       // User cancelled file selection

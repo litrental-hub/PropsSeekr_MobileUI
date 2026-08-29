@@ -99,6 +99,8 @@ The property form persists its property-type-specific fields in the listing `det
 
 Listing and requirement saves return after the record and durable embedding job are committed. They return `embedding_completed: false`, `embedding_status: queued`, and `embedding_job_id`; the API worker performs Vertex embedding and matching asynchronously with retry. The mobile app checks `GET /embedding-jobs/{jobId}` immediately for accurate feedback and exposes `POST /embedding-jobs/{jobId}/retry` only when a job has terminally failed. Do not describe matching as completed until the job reports `completed`.
 
+Bulk `.txt` uploads create a broker-owned import job through `/bulk-imports/uploads`, PUT the text to its presigned URL, then call `/bulk-imports/{jobId}/complete`. The UI must say the import is queued, never completed, at this point. Parsing, canonical ingestion, embedding, and matching occur in the API worker; job status is available at `/bulk-imports/{jobId}`.
+
 Inventory passes `editId` and initial data. The review submission uses `PATCH /listings/{listingId}` when editing; a new form uses `POST /listings`.
 
 When a canonical listing is patched, the API invalidates every unrevealed match calculated from the prior content, expires pending connection requests, clears confirmations, and queues a replacement embedding/matching job. Revealed connections remain historical contact records. The worker clears the target embedding immediately before each job so an edit that races an active job is re-embedded from the newest persisted content.

@@ -267,15 +267,15 @@ export const uploadBulkTxtFile = async (fileUri: string, fileName: string): Prom
 
   // 2. Request a presigned URL from MobileAPI. The response also includes the
   // exact S3 bucket/key needed to start processing after the PUT succeeds.
-  const initRes = await apiClient.post('/file-processor/upload', { fileName });
+  const initRes = await apiClient.post('/bulk-imports/uploads', { fileName });
 
   const uploadUrl = initRes.data?.uploadUrl || initRes.data?.url || (typeof initRes.data === 'string' ? initRes.data : null);
-  const key = initRes.data?.key;
+  const jobId = initRes.data?.job_id;
   if (!uploadUrl || typeof uploadUrl !== 'string') {
     throw new Error('Failed to retrieve a valid presigned upload URL from the server.');
   }
-  if (!key) {
-    throw new Error('The upload response did not include the file processing reference.');
+  if (!jobId) {
+    throw new Error('The upload response did not include the bulk import job reference.');
   }
 
   // 3. Read local file text content
@@ -298,13 +298,9 @@ export const uploadBulkTxtFile = async (fileUri: string, fileName: string): Prom
   // 5. Explicit completion callback. This replaces the former S3 -> Lambda
   // trigger and starts process -> ingest -> embeddings -> matching only after
   // S3 has confirmed that the file is fully uploaded.
-  await apiClient.post(
-    '/file-processor/pipeline',
-    { key },
-    { timeout: 10 * 60 * 1000 },
-  );
+  await apiClient.post(`/bulk-imports/${encodeURIComponent(String(jobId))}/complete`);
 
-  return key;
+  return String(jobId);
 };
 
 export const updateListing = async (listingId: string | number, data: AddListingPayload): Promise<AddListingResponse> => {
