@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,7 +19,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
-import { register, sendEmailOTP } from '../../api/auth';
+import { register } from '../../api/auth';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 // ── Validation ─────────────────────────────────────────────
 const registrationSchema = z.object({
@@ -42,6 +42,7 @@ const registrationSchema = z.object({
 type RegistrationFormData = z.infer<typeof registrationSchema>;
 
 export default function RegistrationScreen() {
+  const { alert: showAlert } = useAppAlert();
   const navigation = useNavigation<any>();
   const { colors, type } = useAppTheme();
 
@@ -73,18 +74,14 @@ export default function RegistrationScreen() {
       };
       
       const response = await register(payload);
-      
-      // Send Email OTP for verification
-      try {
-        await sendEmailOTP({ email: data.email, purpose: 'EmailVerification' });
-      } catch (e) {
-        console.warn('Could not trigger sendEmailOTP:', e);
-      }
 
-      Alert.alert('Success', response.message || 'Registration successful. OTP sent to your email.');
-      
-      // Navigate to OTP screen passing email to enable Email OTP verification
-      navigation.navigate('OTP', { email: data.email });
+      showAlert('Success', response.message || 'Registration successful.');
+
+      if (response.verificationRequired && response.verificationChannel === 'email') {
+        navigation.navigate('OTP', { email: data.email });
+      } else {
+        navigation.navigate('Login');
+      }
     } catch (error: any) {
       console.warn('Registration Attempt Failed:', error.response?.data || error.message);
       let errorMessage = 'Something went wrong. Please try again.';
@@ -101,7 +98,7 @@ export default function RegistrationScreen() {
           errorMessage = resData.title;
         }
       }
-      Alert.alert('Registration Failed', errorMessage);
+      showAlert('Registration Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }

@@ -258,24 +258,53 @@ export const getMyListings = async (
   return response.data;
 };
 
-// ── Bulk File Upload (AWS Presigned S3 PUT) ──────────────────────
-export const uploadBulkTxtFile = async (fileUri: string, fileName: string): Promise<string> => {
+// ── Bulk File Upload ──────────────────────────────────────────────
+export const uploadBulkTxtFile = async (
+  fileUri: string,
+  fileName: string,
+  defaultCity = 'Indore',
+): Promise<string> => {
   // 1. Validate file extension
   if (!fileName.toLowerCase().endsWith('.txt')) {
     throw new Error('Invalid file type. Only .txt (plain text) files are allowed.');
   }
 
-  // 2. Request a presigned URL from MobileAPI. The response also includes the
-  // exact S3 bucket/key needed to start processing after the PUT succeeds.
-  const initRes = await apiClient.post('/bulk-imports/uploads', { fileName });
+  // 2. Initialize a durable import job. Development uses the authenticated
+  // local API upload path; deployed environments use a presigned S3 PUT.
+  const normalizedDefaultCity = defaultCity.trim() || 'Indore';
+  const initRes = await apiClient.post('/bulk-imports/uploads', {
+    fileName,
+    defaultCity: normalizedDefaultCity,
+  });
 
-  const uploadUrl = initRes.data?.uploadUrl || initRes.data?.url || (typeof initRes.data === 'string' ? initRes.data : null);
+  const uploadUrl = initRes.data?.upload_url || initRes.data?.uploadUrl || initRes.data?.url || (typeof initRes.data === 'string' ? initRes.data : null);
   const jobId = initRes.data?.job_id;
-  if (!uploadUrl || typeof uploadUrl !== 'string') {
-    throw new Error('Failed to retrieve a valid presigned upload URL from the server.');
-  }
   if (!jobId) {
     throw new Error('The upload response did not include the bulk import job reference.');
+  }
+
+  if (initRes.data?.upload_mode === 'local') {
+    const uploadEndpoint = initRes.data?.upload_endpoint;
+    if (!uploadEndpoint || typeof uploadEndpoint !== 'string') {
+      throw new Error('The local upload response did not include an upload endpoint.');
+    }
+
+    const form = new FormData();
+    form.append('file', {
+      uri: fileUri,
+      name: fileName,
+      type: 'text/plain',
+    } as any);
+
+    await apiClient.post(uploadEndpoint, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    });
+    return String(jobId);
+  }
+
+  if (!uploadUrl || typeof uploadUrl !== 'string') {
+    throw new Error('Failed to retrieve a valid presigned upload URL from the server.');
   }
 
   // 3. Read local file text content

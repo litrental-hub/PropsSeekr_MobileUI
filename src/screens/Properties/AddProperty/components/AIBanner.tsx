@@ -8,16 +8,17 @@ import {
   ActivityIndicator,
   Platform,
   PermissionsAndroid,
-  Alert,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Voice, { SpeechResultsEvent, SpeechErrorEvent } from '@react-native-voice/voice';
 import { useAddPropertyForm } from '../AddPropertyContext';
 import { useAppTheme, Brand } from '../../../../theme/useAppTheme';
+import { useAppAlert } from '../../../../components/alerts/AppAlertProvider';
 
 export function AIBanner() {
   const { updateState, isSimulatingAI, setIsSimulatingAI } = useAddPropertyForm();
   const { colors } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   const [prompt, setPrompt] = useState('');
   const [isListening, setIsListening] = useState(false);
 
@@ -76,7 +77,7 @@ export function AIBanner() {
         );
 
         if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          Alert.alert('Permission Denied', 'Microphone access is required to use voice input.');
+          showAlert('Permission Denied', 'Microphone access is required to use voice input.');
           return;
         }
       } catch (err) {
@@ -93,7 +94,7 @@ export function AIBanner() {
     } catch (e: any) {
       console.warn('Failed to start speech recognition:', e);
       setIsListening(false);
-      Alert.alert('Voice Unavailable', 'Could not access speech recognition services on this device.');
+      showAlert('Voice Unavailable', 'Could not access speech recognition services on this device.');
     }
   };
 

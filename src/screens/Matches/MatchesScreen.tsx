@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   StatusBar,
   RefreshControl,
   Linking,
@@ -33,6 +32,7 @@ import { resolveMatchSourceIds } from '../../utils/matchFilters';
 import { LogoLoader } from '../../components/common/LogoLoader';
 import { refreshWallet } from '../../services/walletSync';
 import { getMatchPrimaryAction } from '../../utils/matchState';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 // ── Types ─────────────────────────────────────────────────────
 interface MatchProperty {
@@ -222,6 +222,7 @@ function getQualityGradient(quality: string, colors: any): [string, string] {
 // ── Main Screen ───────────────────────────────────────────────
 export default function MatchesScreen() {
   const theme = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   const { colors, type, isDark } = theme;
   const { t } = useTranslation();
   const navigation = useNavigation<any>();
@@ -323,7 +324,7 @@ export default function MatchesScreen() {
 
   const openConnectionAction = useCallback((match: Match, mode: 'request' | 'accept' | 'reject') => {
     if (!brokerId || !match.matchId) {
-      Alert.alert('Error', 'Invalid match or broker ID.');
+      showAlert('Error', 'Invalid match or broker ID.');
       return;
     }
     setActionMatch(match);
@@ -336,7 +337,7 @@ export default function MatchesScreen() {
     setRejectDetails('');
     setActionMessage('');
     setActionResultSuccess(true);
-  }, [brokerId]);
+  }, [brokerId, showAlert]);
 
   const applyConfirmedMatch = useCallback((match: Match, res: Awaited<ReturnType<typeof confirmMatch>>) => {
     const contact = res.unlockedContact || null;

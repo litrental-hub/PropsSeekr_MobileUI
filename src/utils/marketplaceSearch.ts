@@ -20,6 +20,12 @@ export interface MarketplaceFilterOption {
   label: string;
 }
 
+export interface MarketplaceBudgetOption {
+  value?: number;
+  label: string;
+  compactLabel: string;
+}
+
 export const MARKETPLACE_FILTERS: MarketplaceFilterOption[] = [
   { value: 'ALL', label: 'All' },
   { value: '1BHK', label: '1 BHK' },
@@ -29,6 +35,27 @@ export const MARKETPLACE_FILTERS: MarketplaceFilterOption[] = [
   { value: 'COMMERCIAL', label: 'Commercial' },
   { value: 'PLOT', label: 'Plot / Land' },
   { value: 'VILLA', label: 'Villa' },
+];
+
+export const BUY_SELL_BUDGET_FILTERS: MarketplaceBudgetOption[] = [
+  { value: undefined, label: 'Any budget', compactLabel: 'Any' },
+  { value: 5_000_000, label: 'Up to ₹50 Lakh', compactLabel: '≤ ₹50L' },
+  { value: 6_000_000, label: 'Up to ₹60 Lakh', compactLabel: '≤ ₹60L' },
+  { value: 8_000_000, label: 'Up to ₹80 Lakh', compactLabel: '≤ ₹80L' },
+  { value: 9_000_000, label: 'Up to ₹90 Lakh', compactLabel: '≤ ₹90L' },
+  { value: 10_000_000, label: 'Up to ₹1 Crore', compactLabel: '≤ ₹1Cr' },
+  { value: 15_000_000, label: 'Up to ₹1.5 Crore', compactLabel: '≤ ₹1.5Cr' },
+  { value: 20_000_000, label: 'Up to ₹2 Crore', compactLabel: '≤ ₹2Cr' },
+];
+
+export const RENTAL_BUDGET_FILTERS: MarketplaceBudgetOption[] = [
+  { value: undefined, label: 'Any monthly rent', compactLabel: 'Any' },
+  { value: 10_000, label: 'Up to ₹10,000', compactLabel: '≤ ₹10K' },
+  { value: 20_000, label: 'Up to ₹20,000', compactLabel: '≤ ₹20K' },
+  { value: 30_000, label: 'Up to ₹30,000', compactLabel: '≤ ₹30K' },
+  { value: 50_000, label: 'Up to ₹50,000', compactLabel: '≤ ₹50K' },
+  { value: 75_000, label: 'Up to ₹75,000', compactLabel: '≤ ₹75K' },
+  { value: 100_000, label: 'Up to ₹1 Lakh', compactLabel: '≤ ₹1L' },
 ];
 
 interface BuildMarketplacePayloadArgs {

@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,6 +29,7 @@ import {
   mapCreditPacksForDisplay,
   readCachedCreditPacks,
 } from '../../services/creditPacksCache';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 interface TransactionRow {
   id: string;
@@ -68,6 +68,7 @@ const mapTransaction = (transaction: CreditTransaction, colors: any): Transactio
 
 export default function CreditsScreen() {
   const { colors } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   const { t } = useTranslation();
   const creditsBalance = useAppStore(s => s.creditsBalance);
   const freeCreditsBalance = useAppStore(s => s.freeCreditsBalance);
@@ -128,7 +129,7 @@ export default function CreditsScreen() {
 
   const handlePaymentSuccess = (newBalance: number) => {
     setPurchasePack(null);
-    Alert.alert('Payment Successful', `Your wallet now has ${newBalance} tokens.`);
+    showAlert('Payment Successful', `Your wallet now has ${newBalance} tokens.`);
   };
 
   const walletBelongsToUser = !!user?.brokerId && walletBrokerId === String(user.brokerId);

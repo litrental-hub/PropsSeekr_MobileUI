@@ -1,6 +1,6 @@
 # PropSeekr mobile application context
 
-Last verified against `main` on 2026-08-28.
+Last verified against the local implementation on 2026-08-30.
 
 This is the mobile repository's current source of truth. Read it before adding a screen, feature, API call, state transition, or business rule. Update it whenever implementation changes the product flow, UI/API contract, navigation, persistent state, integration, or build process. Never store secrets or customer data here.
 
@@ -99,7 +99,7 @@ The property form persists its property-type-specific fields in the listing `det
 
 Important current API contract: manual listing and requirement create/update handlers still execute targeted embedding and matching synchronously after saving. Listing responses return snake-case `embedding_completed` and `match_count`; requirement responses return camel-case `embeddingCompleted` and `matchCount`. `embedding_jobs` endpoints and the mobile job client exist, but the manual handlers do not currently enqueue jobs or return job IDs. Do not claim queued-job behavior for manual form submissions until that server wiring is completed.
 
-Bulk `.txt` uploads create a broker-owned import job through `/bulk-imports/uploads`, PUT the text to its presigned URL, then call `/bulk-imports/{jobId}/complete`. The UI must say the import is queued, never completed, at this point. Parsing, canonical ingestion, embedding, and matching occur in the API worker; job status is available at `/bulk-imports/{jobId}`.
+Bulk `.txt` uploads first ask the broker to confirm a fallback city. The field starts with the current selected city and falls back to `Indore` when that city is unavailable or the input is blank. The fallback is used only for records that do not explicitly name a city. The UI sends it as `defaultCity` when creating the broker-owned job through `/bulk-imports/uploads`, PUTs the text to its presigned URL (or uses authenticated multipart upload in local Development), then calls `/bulk-imports/{jobId}/complete` for S3 mode. The UI must say the import is queued, never completed, at this point. Parsing, Google server-side geocoding, canonical ingestion, embedding, and matching occur in the API worker; job status is available at `/bulk-imports/{jobId}`.
 
 Inventory passes `editId` and initial data. The review submission uses `PATCH /listings/{listingId}` when editing; a new form uses `POST /listings`.
 
@@ -166,7 +166,7 @@ The Notifications screen refreshes on focus and silently every 15 seconds while 
 
 Wallet and ledger use `/brokers/{brokerId}/wallet` and `/credit-transactions`. Packs use `/credit-packs`; Razorpay uses `/payment/order` and `/payment/verify`.
 
-Bulk `.txt` ingestion requests a presigned URL, uploads directly to S3, then calls `/file-processor/pipeline`. The server owns the bucket and runs extraction, ingestion, Gemini embeddings, and matching.
+Bulk `.txt` ingestion uses the authenticated durable `/bulk-imports` workflow described above. The mobile app never calls the internal file-processor facade or receives its service key.
 
 ## Design system
 
@@ -177,6 +177,7 @@ The active authority is `src/theme/useAppTheme.ts` plus `src/constants/theme.ts`
 - Reuse spacing, radius, font, card, shadow, button, and `PropSeekrLogo` tokens.
 - Use safe areas, theme-aware status bars, accessibility labels, and all relevant loading/empty/error states.
 - User strings belong in the English/Hindi/Marathi locale files.
+- All user-facing app alerts use the global `AppAlertProvider` and `useAppAlert()` from `src/components/alerts/AppAlertProvider.tsx`. Do not add React Native `Alert.alert` calls. The shared modal preserves success/error/warning/info treatments, cancel/destructive buttons, and action callbacks. OS-owned runtime permission prompts remain native; any denial or follow-up message uses the app alert.
 
 An older static `Colors` palette remains in shell/tab code. Prefer the dynamic system for new screens; do not introduce a third palette.
 
@@ -230,4 +231,5 @@ Metro normally uses 8081; the API uses 5150. They are separate processes.
 - `src/utils/location.ts`: GPS and Nominatim.
 - `src/utils/matchFilters.ts`: source-ID routing.
 - `src/services/walletSync.ts`: authoritative wallet refresh.
+- `src/components/alerts/AppAlertProvider.tsx`: global branded alerts and confirmations.
 - `MATCHING_FLOW_UI_CONTEXT.md`: detailed match UX contract.

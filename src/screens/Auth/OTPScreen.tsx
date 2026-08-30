@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,8 +15,10 @@ import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import { sendEmailOTP, verifyEmailOTP, verifyOTP, resendOTP } from '../../api/auth';
 import { useAuthStore } from '../../store/authStore';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 export default function OTPScreen() {
+  const { alert: showAlert } = useAppAlert();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { colors, type } = useAppTheme();
@@ -34,7 +35,7 @@ export default function OTPScreen() {
 
   const handleVerify = async () => {
     if (!otp || otp.length < 6) {
-      Alert.alert('Validation Error', 'Please enter a valid 6-digit OTP.');
+      showAlert('Validation Error', 'Please enter a valid 6-digit OTP.');
       return;
     }
 
@@ -58,17 +59,17 @@ export default function OTPScreen() {
             response.refreshToken || response.token // fallback if refresh missing
           );
         } else {
-          Alert.alert('Verified', response.message || 'Mobile number verified successfully.');
+          showAlert('Verified', response.message || 'Mobile number verified successfully.');
           navigation.navigate('Login');
         }
       } else {
         const response = await verifyEmailOTP({ email: emailAddress, otp, purpose: 'EmailVerification' });
-        Alert.alert('Verified', response.message || 'Email verified successfully.');
+        showAlert('Verified', response.message || 'Email verified successfully.');
         navigation.navigate('Login');
       }
     } catch (error: any) {
       console.error('Verify OTP Error:', error);
-      Alert.alert('Verification Failed', error.response?.data?.message || 'Invalid OTP.');
+      showAlert('Verification Failed', error.response?.data?.message || 'Invalid OTP.');
     } finally {
       setIsLoading(false);
     }
@@ -76,7 +77,7 @@ export default function OTPScreen() {
 
   const handleResendOTP = async () => {
     if (!targetIdentifier) {
-      Alert.alert('Error', 'Contact identifier is missing.');
+      showAlert('Error', 'Contact identifier is missing.');
       return;
     }
 
@@ -84,14 +85,14 @@ export default function OTPScreen() {
       setIsResending(true);
       if (phone) {
         const response = await resendOTP({ mobileNumber: phone });
-        Alert.alert('OTP Resent', response.message || 'OTP has been resent successfully to your mobile.');
+        showAlert('OTP Resent', response.message || 'OTP has been resent successfully to your mobile.');
       } else {
         const response = await sendEmailOTP({ email: emailAddress, purpose: 'EmailVerification' });
-        Alert.alert('OTP Resent', response.message || 'OTP has been resent successfully.');
+        showAlert('OTP Resent', response.message || 'OTP has been resent successfully.');
       }
     } catch (error: any) {
       console.error('Resend OTP Error:', error);
-      Alert.alert('Failed to resend', error.response?.data?.message || 'Something went wrong.');
+      showAlert('Failed to resend', error.response?.data?.message || 'Something went wrong.');
     } finally {
       setIsResending(false);
     }

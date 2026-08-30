@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Linking,
   Modal,
@@ -26,6 +25,7 @@ import {
   MatchMediaDTO,
 } from '../../api/matches';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MatchDetail'>;
 
@@ -99,6 +99,7 @@ function Fact({ icon, label, value, colors }: { icon: string; label: string; val
 
 export default function MatchDetailScreen({ route, navigation }: Props) {
   const { colors, isDark } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   const matchId = Number(route.params.matchId);
   const [details, setDetails] = useState<MatchDetailDTO | null>(null);
   const [loading, setLoading] = useState(true);
@@ -132,7 +133,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const openWhatsApp = () => {
     const phone = details?.unlockedContact?.ownerMobile?.replace(/[^0-9]/g, '');
     if (!phone) return;
-    Linking.openURL(`https://wa.me/${phone}`).catch(() => Alert.alert('WhatsApp unavailable', 'Could not open WhatsApp on this device.'));
+    Linking.openURL(`https://wa.me/${phone}`).catch(() => showAlert('WhatsApp unavailable', 'Could not open WhatsApp on this device.'));
   };
 
   if (loading) {

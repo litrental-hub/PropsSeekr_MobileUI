@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAuthStore } from '../../store/authStore';
 import { promptBiometricAuth } from '../../utils/biometrics';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 export default function LockScreen() {
   const { colors, type } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   
   const appPin = useAuthStore(s => s.appPin);
   const biometricEnabled = useAuthStore(s => s.biometricEnabled);
@@ -59,7 +61,7 @@ export default function LockScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(
+    showAlert(
       'Log Out?',
       'If you log out, you will need to enter your email and password next time.',
       [

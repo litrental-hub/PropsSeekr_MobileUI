@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAddPropertyForm } from '../AddPropertyContext';
@@ -9,6 +9,7 @@ import { Stepper } from '../../../../components/forms/Stepper';
 import { Toggle } from '../../../../components/forms/Toggle';
 import { FormInput } from '../../../../components/forms/FormInput';
 import { useAppTheme, Brand } from '../../../../theme/useAppTheme';
+import { useAppAlert } from '../../../../components/alerts/AppAlertProvider';
 
 const TENANT_OPTIONS = [
   'Family', 'Working Professionals', 'Bachelor Boys', 
@@ -25,6 +26,7 @@ const BUSINESS_OPTIONS = [
 export function OwnerPreferencesSection({ themeColor }: { themeColor: string }) {
   const { state, updateState } = useAddPropertyForm();
   const { colors } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
 
   // Helper to toggle multi-state chips for tenant preferences
   // Since we need to store 3 states, we will store them in the amenities object or a new object
@@ -73,7 +75,7 @@ export function OwnerPreferencesSection({ themeColor }: { themeColor: string }) 
   const pickMedia = async () => {
     const remaining = 12 - state.media.length;
     if (remaining <= 0) {
-      Alert.alert('Media limit reached', 'You can add up to 12 photos and videos.');
+      showAlert('Media limit reached', 'You can add up to 12 photos and videos.');
       return;
     }
 
@@ -86,7 +88,7 @@ export function OwnerPreferencesSection({ themeColor }: { themeColor: string }) 
     });
     if (result.didCancel) return;
     if (result.errorCode) {
-      Alert.alert('Could not open gallery', result.errorMessage || 'Please try again.');
+      showAlert('Could not open gallery', result.errorMessage || 'Please try again.');
       return;
     }
 

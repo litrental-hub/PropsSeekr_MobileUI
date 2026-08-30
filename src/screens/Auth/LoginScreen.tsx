@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   ScrollView,
@@ -23,11 +22,13 @@ import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PropSeekrLogo } from '../../components/PropSeekrLogo';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTranslation } from 'react-i18next';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 // ─────────────────────────────────────────────────────────────
 // LoginScreen
 // ─────────────────────────────────────────────────────────────
 export default function LoginScreen() {
+  const { alert: showAlert } = useAppAlert();
   const setAuth = useAuthStore(s => s.setAuth);
   const navigation = useNavigation<any>();
   const [identifier, setIdentifier] = useState('');
@@ -42,7 +43,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!identifier || !password) {
-      Alert.alert('Validation Error', 'Please enter both identifier and password.');
+      showAlert('Validation Error', 'Please enter both identifier and password.');
       return;
     }
 
@@ -93,7 +94,7 @@ export default function LoginScreen() {
         errorMessage = error.message;
       }
 
-      Alert.alert(`Login Error ${status ? `(${status})` : ''}`, errorMessage);
+      showAlert(`Login Error ${status ? `(${status})` : ''}`, errorMessage);
     } finally {
       setIsLoading(false);
     }

@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import RootNavigator from './src/navigation/RootNavigator';
 import { Colors } from './src/constants/colors';
+import { AppAlertProvider } from './src/components/alerts/AppAlertProvider';
 import './src/i18n'; // Import i18n setup
 
 const queryClient = new QueryClient({
@@ -76,14 +77,16 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.background }}>
       <SafeAreaProvider style={{ flex: 1 }}>
         <QueryClientProvider client={queryClient}>
-          <StatusBar
-            barStyle="dark-content"
-            backgroundColor={Colors.background}
-            translucent={false}
-          />
-          <GlobalErrorBoundary>
-            <RootNavigator />
-          </GlobalErrorBoundary>
+          <AppAlertProvider>
+            <StatusBar
+              barStyle="dark-content"
+              backgroundColor={Colors.background}
+              translucent={false}
+            />
+            <GlobalErrorBoundary>
+              <RootNavigator />
+            </GlobalErrorBoundary>
+          </AppAlertProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

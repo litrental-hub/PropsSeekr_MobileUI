@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
-  Alert,
   ActivityIndicator,
   Keyboard,
   TouchableWithoutFeedback,
@@ -24,6 +23,7 @@ import { getEmbeddingJob, retryEmbeddingJob } from '../../api/embeddingJobs';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { PROPERTY_TYPES, BHK_OPTIONS } from '../../constants';
 import { forwardGeocode, reverseGeocode } from '../../utils/location';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -176,6 +176,7 @@ function getInputStyle(hasError: boolean, colors: any) {
 export default function AddRequirementScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   // ── Mandatory state ──────────────────────────────────────────────────────
   const [propertyType, setPropertyType] = useState<string>('');
   const [location, setLocation] = useState('');
@@ -321,7 +322,7 @@ export default function AddRequirementScreen() {
     if (geocodedLocations.some(value => !value)) {
       setIsSubmitting(false);
       const failedIndex = geocodedLocations.findIndex(value => !value);
-      Alert.alert('Location Not Found', `We could not find "${locationTexts[failedIndex]}". Please enter a more specific locality and city.`);
+      showAlert('Location Not Found', `We could not find "${locationTexts[failedIndex]}". Please enter a more specific locality and city.`);
       return;
     }
     const resolvedLocations = await Promise.all(geocodedLocations.map(async (coordinates, index) => {
@@ -381,7 +382,7 @@ export default function AddRequirementScreen() {
             if (job.status === 'processing') matchingMessage = 'Matching is now processing in the background.';
             if (job.status === 'completed') matchingMessage = 'Matching has completed.';
             if (job.status === 'failed') {
-              Alert.alert(
+              showAlert(
                 'Matching needs a retry',
                 job.last_error || 'The requirement was saved, but matching could not be completed.',
                 [
@@ -395,13 +396,13 @@ export default function AddRequirementScreen() {
             // The save is durable even when an immediate status read is unavailable.
           }
         }
-        Alert.alert(
+        showAlert(
           '✅ Requirement Submitted!',
           `Requirement submitted successfully. ${matchingMessage}`,
           [{ text: 'Done', onPress: () => navigation.goBack() }],
         );
       } else {
-        Alert.alert('Not Saved', 'Requirement could not be saved. Please try again.');
+        showAlert('Not Saved', 'Requirement could not be saved. Please try again.');
       }
     } catch (error: any) {
       console.error('Add Requirement Error:', error);
@@ -413,7 +414,7 @@ export default function AddRequirementScreen() {
         msg = error.response.data.message || error.response.data.error || JSON.stringify(error.response.data);
       }
       
-      Alert.alert(`Submission Failed`, `${msg} (Status: ${error.response?.status || 'None'})`);
+      showAlert('Submission Failed', `${msg} (Status: ${error.response?.status || 'None'})`);
     } finally {
       setIsSubmitting(false);
     }

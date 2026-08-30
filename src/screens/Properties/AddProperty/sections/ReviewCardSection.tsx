@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAddPropertyForm } from '../AddPropertyContext';
@@ -11,10 +11,12 @@ import { addListing, updateListing, uploadListingMedia } from '../../../../api/p
 import { getEmbeddingJob, retryEmbeddingJob } from '../../../../api/embeddingJobs';
 import { useAuthStore } from '../../../../store/authStore';
 import { forwardGeocode } from '../../../../utils/location';
+import { useAppAlert } from '../../../../components/alerts/AppAlertProvider';
 
 export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (step: number) => void }) {
   const { state, updateState } = useAddPropertyForm();
   const { colors, isDark } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   const navigation = useNavigation();
   const route = useRoute<any>();
   const { t } = useTranslation();
@@ -89,7 +91,7 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
 
   const handleSubmit = async () => {
     if (!state.transactionType || !state.propertyType || !state.city?.trim() || !state.areaLocality?.trim() || (state.transactionType === 'Rent' ? !state.monthlyRent : !state.salePrice)) {
-      Alert.alert(
+      showAlert(
         'Incomplete Form',
         'Please ensure Transaction Type, Property Type, City, Area/Locality, and Price/Rent are completed before submitting.',
         [{ text: 'Go Back to Edit', onPress: () => setStep(1) }]
@@ -101,7 +103,7 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
     const geocodedLocation = await forwardGeocode(`${state.areaLocality}, ${state.city}`);
     if (!geocodedLocation) {
       setIsSubmitting(false);
-      Alert.alert('Location Not Found', 'We could not locate this property area on the map. Please enter a more specific locality and city.');
+      showAlert('Location Not Found', 'We could not locate this property area on the map. Please enter a more specific locality and city.');
       return;
     }
     const lat = geocodedLocation.lat;
@@ -131,7 +133,7 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
     const backendPropertyType = propertyTypeMap[state.propertyType];
     if (!backendPropertyType) {
       setIsSubmitting(false);
-      Alert.alert('Invalid property type', 'Please select a supported property type.');
+      showAlert('Invalid property type', 'Please select a supported property type.');
       return;
     }
 
@@ -186,7 +188,11 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
             mediaWarning = `\n\nThe listing was saved, but media upload failed: ${mediaError?.response?.data?.message || mediaError?.message || 'Please try again later.'}`;
           }
         }
-        let matchingMessage = 'Matching is queued and will update automatically in the background.';
+        let matchingMessage = res.embedding_completed === true
+          ? 'Gemini embedding and matching have completed.'
+          : res.embedding_completed === false
+            ? 'The property was saved, but embedding or matching needs a retry.'
+            : 'Matching is queued and will update automatically in the background.';
         if (res.embedding_job_id) {
           try {
             const job = await getEmbeddingJob(res.embedding_job_id);
@@ -194,12 +200,12 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
             if (job.status === 'completed') matchingMessage = 'Matching has completed.';
             if (job.status === 'failed') {
               setIsSubmitting(false);
-              Alert.alert(
+              showAlert(
                 'Matching needs a retry',
                 job.last_error || 'The listing was saved, but matching could not be completed.',
                 [
                   { text: 'Later', style: 'cancel' },
-                  { text: 'Retry matching', onPress: () => retryEmbeddingJob(res.embedding_job_id!).catch(() => Alert.alert('Retry unavailable', 'Please try again shortly.')) },
+                  { text: 'Retry matching', onPress: () => retryEmbeddingJob(res.embedding_job_id!).catch(() => showAlert('Retry unavailable', 'Please try again shortly.')) },
                 ],
               );
               return;
@@ -209,7 +215,7 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
           }
         }
         setIsSubmitting(false);
-        Alert.alert(
+        showAlert(
           isEditing ? '✅ Property Updated Successfully!' : '✅ Property Listed Successfully!',
           `Your property has been saved (ID: ${res.listing_id || res.listingId || listingId || 'N/A'}). ${matchingMessage}${mediaWarning}`,
           [
@@ -223,7 +229,7 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
         );
       } else {
         setIsSubmitting(false);
-        Alert.alert('❌ Submission Failed', res.message || 'Could not save property listing. Please try again.');
+        showAlert('❌ Submission Failed', res.message || 'Could not save property listing. Please try again.');
       }
     } catch (err: any) {
       setIsSubmitting(false);
@@ -243,7 +249,7 @@ export function ReviewCardSection({ setStep }: { themeColor: string, setStep: (s
       } else if (err.message) {
         msg = err.message;
       }
-      Alert.alert('❌ Submission Failed', msg);
+      showAlert('❌ Submission Failed', msg);
     }
   };
 

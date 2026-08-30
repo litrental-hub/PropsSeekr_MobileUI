@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   StatusBar,
-  Alert,
   Linking,
   RefreshControl,
 } from 'react-native';
@@ -37,10 +36,13 @@ import {
   formatMarketplaceDistance,
   formatMarketplaceFreshness,
   formatMarketplacePrice,
+  BUY_SELL_BUDGET_FILTERS,
   MARKETPLACE_FILTERS,
   MarketplaceFilter,
+  RENTAL_BUDGET_FILTERS,
 } from '../../utils/marketplaceSearch';
 import { pick, types, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type LocationStatus = 'idle' | 'requesting' | 'ready' | 'unavailable';
@@ -48,6 +50,7 @@ const PAGE_SIZE = 20;
 
 // ── Main Screen ──────────────────────────────────────────────
 export default function DashboardScreen() {
+  const { alert: showAlert } = useAppAlert();
   const navigation = useNavigation<Nav>();
   const { sectionType, setSectionType, location, setLocation, unreadNotifications } = useAppStore();
   const { t } = useTranslation();
@@ -57,9 +60,16 @@ export default function DashboardScreen() {
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>(location ? 'ready' : 'idle');
   const [selectedFilter, setSelectedFilter] = useState<MarketplaceFilter>('ALL');
+  const [selectedBudgetMax, setSelectedBudgetMax] = useState<number | undefined>();
+  const [draftFilter, setDraftFilter] = useState<MarketplaceFilter>('ALL');
+  const [draftBudgetMax, setDraftBudgetMax] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<'Available' | 'Looking'>('Available');
   const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [isActionsVisible, setIsActionsVisible] = useState(false);
+  const [isBulkCityVisible, setIsBulkCityVisible] = useState(false);
+  const [bulkDefaultCity, setBulkDefaultCity] = useState('Indore');
+  const [pendingBulkFile, setPendingBulkFile] = useState<{ uri: string; name: string } | null>(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
@@ -75,6 +85,7 @@ export default function DashboardScreen() {
   const requestSequence = useRef(0);
 
   const isRental = sectionType === 'Rentals';
+  const budgetOptions = isRental ? RENTAL_BUDGET_FILTERS : BUY_SELL_BUDGET_FILTERS;
   const tabCounts = {
     Available: availableCount,
     Looking: lookingCount,
@@ -90,6 +101,25 @@ export default function DashboardScreen() {
       setLocationStatus('unavailable');
     }
   }, [setLocation]);
+
+  const queueBulkUpload = useCallback(async () => {
+    if (!pendingBulkFile || bulkUploading) return;
+    const city = bulkDefaultCity.trim() || 'Indore';
+    setBulkUploading(true);
+    try {
+      const importJobId = await uploadBulkTxtFile(pendingBulkFile.uri, pendingBulkFile.name, city);
+      setIsBulkCityVisible(false);
+      setPendingBulkFile(null);
+      showAlert(
+        'Import queued',
+        `Your file was queued with ${city} as the fallback city (job ${importJobId}). Explicit cities in the file will still be respected.`,
+      );
+    } catch (err: any) {
+      showAlert('Upload Failed', err?.message || 'An unexpected error occurred during file upload.');
+    } finally {
+      setBulkUploading(false);
+    }
+  }, [bulkDefaultCity, bulkUploading, pendingBulkFile, showAlert]);
 
   useEffect(() => {
     if (location) {
@@ -123,6 +153,7 @@ export default function DashboardScreen() {
         location,
         filter: selectedFilter,
         searchQuery: debouncedSearch,
+        budgetMax: selectedBudgetMax,
         page: nextPage,
         limit: PAGE_SIZE,
       }));
@@ -155,7 +186,7 @@ export default function DashboardScreen() {
         setLoadingMore(false);
       }
     }
-  }, [activeTab, debouncedSearch, isRental, location, selectedFilter]);
+  }, [activeTab, debouncedSearch, isRental, location, selectedBudgetMax, selectedFilter]);
 
   useEffect(() => {
     if (locationStatus === 'ready' && location) {
@@ -172,6 +203,34 @@ export default function DashboardScreen() {
   };
 
   const selectedFilterLabel = MARKETPLACE_FILTERS.find(option => option.value === selectedFilter)?.label ?? 'All';
+  const selectedBudgetLabel = budgetOptions.find(option => option.value === selectedBudgetMax)?.compactLabel;
+  const activeFilterCount = Number(selectedFilter !== 'ALL') + Number(selectedBudgetMax !== undefined);
+  const draftActiveFilterCount = Number(draftFilter !== 'ALL') + Number(draftBudgetMax !== undefined);
+  const filterButtonLabel = activeFilterCount > 1
+    ? `${activeFilterCount} Filters`
+    : selectedFilter !== 'ALL'
+      ? selectedFilterLabel
+      : selectedBudgetLabel ?? t('dashboard.filter');
+
+  const openFilters = () => {
+    setDraftFilter(selectedFilter);
+    setDraftBudgetMax(selectedBudgetMax);
+    setIsFilterVisible(true);
+  };
+
+  const applyFilters = () => {
+    setSelectedFilter(draftFilter);
+    setSelectedBudgetMax(draftBudgetMax);
+    setIsFilterVisible(false);
+  };
+
+  const clearFilters = () => {
+    setDraftFilter('ALL');
+    setDraftBudgetMax(undefined);
+    setSelectedFilter('ALL');
+    setSelectedBudgetMax(undefined);
+    setIsFilterVisible(false);
+  };
 
   const openListingMatches = useCallback((listingId: string) => {
     (navigation as any).navigate('Matches', { property: { listingId } });
@@ -218,7 +277,13 @@ export default function DashboardScreen() {
               return (
                 <TouchableOpacity
                   key={key}
-                  onPress={() => setSectionType(key as any)}
+                  onPress={() => {
+                    if (sectionType !== key) {
+                      setSelectedBudgetMax(undefined);
+                      setDraftBudgetMax(undefined);
+                    }
+                    setSectionType(key as any);
+                  }}
                   activeOpacity={0.8}
                   style={styles.modeBtn}
                 >
@@ -316,13 +381,13 @@ export default function DashboardScreen() {
                 <TouchableOpacity
                   style={styles.filterBtn}
                   activeOpacity={0.85}
-                  onPress={() => setIsFilterVisible(true)}
+                  onPress={openFilters}
                   accessibilityRole="button"
-                  accessibilityLabel={`Property filter: ${selectedFilterLabel}`}
+                  accessibilityLabel={`Property filters: ${filterButtonLabel}`}
                 >
                   <LinearGradient colors={[Brand.blue, Brand.teal]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.filterGrad}>
                     <MaterialCommunityIcons name="tune-variant" size={18} color="#FFFFFF" />
-                    <Text style={styles.filterText}>{selectedFilter === 'ALL' ? t('dashboard.filter') : selectedFilterLabel}</Text>
+                    <Text style={styles.filterText}>{filterButtonLabel}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -358,8 +423,8 @@ export default function DashboardScreen() {
                   icon="map-marker-off-outline"
                   title="No nearby results"
                   message={`No ${activeTab.toLowerCase()} ${isRental ? 'rental' : 'buy/sell'} records match this location and filter.`}
-                  action={selectedFilter !== 'ALL' || debouncedSearch ? 'Clear filters' : undefined}
-                  onAction={selectedFilter !== 'ALL' || debouncedSearch ? () => { setSelectedFilter('ALL'); setSearchQuery(''); } : undefined}
+                  action={selectedFilter !== 'ALL' || selectedBudgetMax !== undefined || debouncedSearch ? 'Clear filters' : undefined}
+                  onAction={selectedFilter !== 'ALL' || selectedBudgetMax !== undefined || debouncedSearch ? () => { setSelectedFilter('ALL'); setSelectedBudgetMax(undefined); setSearchQuery(''); } : undefined}
                   theme={theme}
                 />
               ) : (
@@ -462,24 +527,24 @@ export default function DashboardScreen() {
 
                     const fileName = pickerResult.name || 'upload.txt';
                     if (!fileName.toLowerCase().endsWith('.txt')) {
-                      Alert.alert('Validation Error', 'Invalid file type! Only .txt (plain text) files are permitted for bulk upload.');
+                      showAlert('Validation Error', 'Invalid file type! Only .txt (plain text) files are permitted for bulk upload.');
                       return;
                     }
 
                     if (!pickerResult.uri) {
-                      Alert.alert('Error', 'Unable to retrieve file path.');
+                      showAlert('Error', 'Unable to retrieve file path.');
                       return;
                     }
 
-                    Alert.alert('Uploading', `Uploading ${fileName}. Processing will continue safely in the background.`);
-                    const importJobId = await uploadBulkTxtFile(pickerResult.uri, fileName);
-                    Alert.alert('Import queued', `Your file was uploaded and queued for processing (job ${importJobId}). Listings, requirements, embeddings, and matches will update automatically.`);
+                    setPendingBulkFile({ uri: pickerResult.uri, name: fileName });
+                    setBulkDefaultCity(location?.city?.trim() || 'Indore');
+                    setIsBulkCityVisible(true);
                   } catch (err: any) {
                     if (isErrorWithCode(err) && err.code === errorCodes.OPERATION_CANCELED) {
                       // User cancelled file selection
                       return;
                     }
-                    Alert.alert('Upload Failed', err?.message || 'An unexpected error occurred during file upload.');
+                    showAlert('Upload Failed', err?.message || 'An unexpected error occurred during file upload.');
                   }
                 }}
               >
@@ -496,19 +561,74 @@ export default function DashboardScreen() {
           </View>
         </BottomSheet>
 
+        <BottomSheet
+          visible={isBulkCityVisible}
+          onClose={() => {
+            if (bulkUploading) return;
+            setIsBulkCityVisible(false);
+            setPendingBulkFile(null);
+          }}
+        >
+          <View style={styles.filterSheetContent}>
+            <View style={styles.bulkCityHeader}>
+              <View style={[styles.actionIconBox, { backgroundColor: 'rgba(16,185,129,0.15)' }]}>
+                <MaterialCommunityIcons name="map-marker-check-outline" size={26} color={Brand.teal} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.filterSheetTitle, styles.bulkCityTitle, { color: colors.textPrimary }]}>Confirm fallback city</Text>
+                <Text style={[styles.bulkCityFile, { color: colors.textDim }]} numberOfLines={1}>{pendingBulkFile?.name}</Text>
+              </View>
+            </View>
+            <Text style={[styles.bulkCityHelp, { color: colors.textSecondary }]}>
+              This city is used only when a WhatsApp record does not name a city. Explicit cities in the file are never replaced. Blank input defaults to Indore.
+            </Text>
+            <Text style={[styles.bulkCityLabel, { color: colors.textPrimary }]}>Fallback city</Text>
+            <TextInput
+              value={bulkDefaultCity}
+              onChangeText={setBulkDefaultCity}
+              placeholder="Indore"
+              placeholderTextColor={colors.textDim}
+              editable={!bulkUploading}
+              autoCapitalize="words"
+              style={[styles.bulkCityInput, { color: colors.textPrimary, backgroundColor: colors.inputBg, borderColor: Brand.blueBorder }]}
+              accessibilityLabel="Fallback city for records without a city"
+            />
+            <TouchableOpacity
+              activeOpacity={0.85}
+              disabled={bulkUploading}
+              onPress={queueBulkUpload}
+              style={[styles.bulkCityButton, bulkUploading && styles.bulkCityButtonDisabled]}
+            >
+              <LinearGradient colors={[Brand.blue, Brand.teal]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.bulkCityButtonGradient}>
+                <MaterialCommunityIcons name={bulkUploading ? 'progress-upload' : 'cloud-upload-outline'} size={20} color="#FFFFFF" />
+                <Text style={styles.bulkCityButtonText}>{bulkUploading ? 'Uploading…' : 'Upload and process'}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </BottomSheet>
+
         <BottomSheet visible={isFilterVisible} onClose={() => setIsFilterVisible(false)}>
           <View style={styles.filterSheetContent}>
-            <Text style={[styles.filterSheetTitle, { color: colors.textPrimary }]}>Property Type</Text>
+            <View style={styles.filterSheetHeader}>
+              <View>
+                <Text style={[styles.filterSheetTitle, styles.filterSheetMainTitle, { color: colors.textPrimary }]}>Filters</Text>
+                <Text style={[styles.filterSheetSubtitle, { color: colors.textDim }]}>Refine nearby {isRental ? 'rental' : 'buy/sell'} results</Text>
+              </View>
+              {draftActiveFilterCount > 0 ? (
+                <TouchableOpacity onPress={clearFilters} accessibilityRole="button" accessibilityLabel="Clear all property filters">
+                  <Text style={styles.clearFiltersText}>Clear all</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <Text style={[styles.filterSectionTitle, { color: colors.textPrimary }]}>Property Type</Text>
             <View style={styles.filterSheetOptions}>
               {MARKETPLACE_FILTERS.map(option => {
-                const active = selectedFilter === option.value;
+                const active = draftFilter === option.value;
                 return (
                   <TouchableOpacity
                     key={option.value}
-                    onPress={() => {
-                      setSelectedFilter(option.value);
-                      setIsFilterVisible(false);
-                    }}
+                    onPress={() => setDraftFilter(option.value)}
                     activeOpacity={0.75}
                     style={styles.filterSheetOptionBtn}
                   >
@@ -530,6 +650,50 @@ export default function DashboardScreen() {
                 );
               })}
             </View>
+
+            <View style={styles.filterSectionDivider} />
+            <Text style={[styles.filterSectionTitle, { color: colors.textPrimary }]}>
+              {isRental ? 'Maximum Monthly Rent' : 'Maximum Budget'}
+            </Text>
+            <Text style={[styles.filterSectionHelp, { color: colors.textDim }]}>Show properties priced at or below the selected amount.</Text>
+            <View style={styles.filterSheetOptions}>
+              {budgetOptions.map(option => {
+                const active = draftBudgetMax === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value ?? 'any'}
+                    onPress={() => setDraftBudgetMax(option.value)}
+                    activeOpacity={0.75}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={option.label}
+                    style={styles.filterSheetOptionBtn}
+                  >
+                    {active ? (
+                      <LinearGradient
+                        colors={[Brand.blue, Brand.teal]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.bhkChipActive}
+                      >
+                        <Text style={[styles.bhkChipTextActive, { color: '#FFFFFF' }]}>{option.label}</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={[styles.bhkChip, { backgroundColor: colors.cardBg, borderColor: Brand.blueBorder }]}>
+                        <Text style={[styles.bhkChipText, { color: colors.textSecondary }]}>{option.label}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity onPress={applyFilters} activeOpacity={0.85} style={styles.applyFiltersButton} accessibilityRole="button">
+              <LinearGradient colors={[Brand.blue, Brand.teal]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.applyFiltersGradient}>
+                <MaterialCommunityIcons name="check" size={20} color="#FFFFFF" />
+                <Text style={styles.applyFiltersText}>Apply Filters</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </BottomSheet>
       </SafeAreaView>
@@ -971,6 +1135,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 16,
   },
+  filterSheetMainTitle: { marginBottom: 2 },
+  filterSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  filterSheetSubtitle: { fontSize: 13, lineHeight: 18 },
+  clearFiltersText: { color: Brand.teal, fontSize: 14, fontWeight: '800' },
+  filterSectionTitle: { fontSize: 15, fontWeight: '800', marginBottom: 10 },
+  filterSectionHelp: { fontSize: 12, lineHeight: 17, marginTop: -4, marginBottom: 12 },
+  filterSectionDivider: { height: 1, backgroundColor: Brand.blueBorder, marginVertical: 20, opacity: 0.7 },
   filterSheetOptions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -979,6 +1155,16 @@ const styles = StyleSheet.create({
   filterSheetOptionBtn: {
     marginBottom: 4,
   },
+  applyFiltersButton: { borderRadius: 14, overflow: 'hidden', marginTop: 24 },
+  applyFiltersGradient: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+  },
+  applyFiltersText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 
   locationGate: {
     marginHorizontal: 20,
@@ -1055,4 +1241,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
+  bulkCityHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  bulkCityTitle: { marginBottom: 2 },
+  bulkCityFile: { fontSize: 12 },
+  bulkCityHelp: { fontSize: 13, lineHeight: 20, marginBottom: 18 },
+  bulkCityLabel: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  bulkCityInput: { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 },
+  bulkCityButton: { marginTop: 18, borderRadius: 12, overflow: 'hidden' },
+  bulkCityButtonDisabled: { opacity: 0.65 },
+  bulkCityButtonGradient: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
+  bulkCityButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
 });

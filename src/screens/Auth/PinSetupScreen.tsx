@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppTheme, Brand } from '../../theme/useAppTheme';
 import { useAuthStore } from '../../store/authStore';
 import { checkBiometricSupport } from '../../utils/biometrics';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 export default function PinSetupScreen() {
   const { colors, type } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   
   const setAppPin = useAuthStore(s => s.setAppPin);
   const setBiometricEnabled = useAuthStore(s => s.setBiometricEnabled);
@@ -51,7 +53,7 @@ export default function PinSetupScreen() {
       // PIN matches!
       const isBioSupported = await checkBiometricSupport();
       if (isBioSupported) {
-        Alert.alert(
+        showAlert(
           'Enable Biometrics?',
           'Would you like to use Face ID / Fingerprint alongside your PIN for faster unlock?',
           [
@@ -70,7 +72,7 @@ export default function PinSetupScreen() {
         finishSetup(pin, false);
       }
     } else {
-      Alert.alert('PIN Mismatch', 'The PINs did not match. Please try again.');
+      showAlert('PIN Mismatch', 'The PINs did not match. Please try again.');
       setPin('');
       setConfirmPin('');
       setStep('create');

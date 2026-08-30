@@ -46,6 +46,20 @@ describe('buildMarketplacePayload', () => {
     expect(buildMarketplacePayload({ ...base, filter: 'PLOT' }).category).toBe('PLOT');
     expect(buildMarketplacePayload({ ...base, filter: 'VILLA' }).filters.propertyTypes).toEqual(['VILLA', 'BUNGALOW']);
   });
+
+  it('sends the selected lakh budget as a maximum server-side budget filter', () => {
+    const payload = buildMarketplacePayload({
+      transactionType: 'BUY_SELL',
+      listingType: 'SUPPLY',
+      location,
+      filter: '2BHK',
+      searchQuery: '',
+      budgetMax: 9_000_000,
+      page: 1,
+    });
+
+    expect(payload.budget).toEqual({ min: undefined, max: 9_000_000 });
+  });
 });
 
 describe('marketplace formatters', () => {

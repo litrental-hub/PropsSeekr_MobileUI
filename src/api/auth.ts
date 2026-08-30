@@ -17,6 +17,8 @@ export interface RegisterPayload {
 export interface RegisterResponse {
   userId: string;
   message: string;
+  verificationRequired: boolean;
+  verificationChannel?: 'email' | null;
 }
 
 export const register = async (data: RegisterPayload): Promise<RegisterResponse> => {
@@ -153,4 +155,3 @@ export const logout = async (): Promise<any> => {
   const response = await apiClient.post('/auth/logout');
   return response.data;
 };
-

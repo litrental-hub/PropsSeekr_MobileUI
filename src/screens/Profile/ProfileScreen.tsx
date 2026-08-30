@@ -10,7 +10,6 @@ import {
   Platform,
   StatusBar,
   Image,
-  Alert,
   ActivityIndicator,
   PermissionsAndroid,
 } from 'react-native';
@@ -27,6 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { getProfile, updateProfile, uploadProfilePhoto } from '../../api/profile';
+import { useAppAlert } from '../../components/alerts/AppAlertProvider';
 
 // ── Validation ─────────────────────────────────────────────
 const profileSchema = z.object({
@@ -40,6 +40,7 @@ const profileSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function ProfileScreen() {
+  const { alert: showAlert } = useAppAlert();
   const logout = useAuthStore(s => s.logout);
   const { colors, type } = useAppTheme();
   const user = useAuthStore(s => s.user);
@@ -117,11 +118,11 @@ export default function ProfileScreen() {
         companyAddress: data.companyAddress,
         officeAddress: data.companyAddress,
       });
-      Alert.alert('Success', 'Profile updated successfully.');
+      showAlert('Success', 'Profile updated successfully.');
     } catch (error: any) {
       console.error('Failed to update profile:', error);
       const msg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Failed to update profile.';
-      Alert.alert('Error', msg);
+      showAlert('Error', msg);
     } finally {
       setSaving(false);
     }
@@ -145,18 +146,18 @@ export default function ProfileScreen() {
         companyName: currentValues.companyName || '',
         agencyName: currentValues.companyName || '',
       });
-      Alert.alert('Success', 'Profile photo updated successfully!');
+      showAlert('Success', 'Profile photo updated successfully!');
     } catch (err: any) {
       console.log('Upload error:', err?.message, err?.response?.data);
       setPhotoUrl(uri);
-      Alert.alert('Notice', 'Photo updated locally! Tap "Save Profile" to save all profile changes.');
+      showAlert('Notice', 'Photo updated locally! Tap "Save Profile" to save all profile changes.');
     } finally {
       setSaving(false);
     }
   };
 
   const handlePhotoChange = () => {
-    Alert.alert(
+    showAlert(
       'Update Profile Photo',
       'Select an option to pick a photo:',
       [
@@ -176,13 +177,13 @@ export default function ProfileScreen() {
                   }
                 );
                 if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-                  Alert.alert('Permission Denied', 'Camera permission is required to take a photo.');
+                  showAlert('Permission Denied', 'Camera permission is required to take a photo.');
                   return;
                 }
               }
               const res = await launchCamera({ mediaType: 'photo', quality: 0.8, cameraType: 'front', saveToPhotos: false });
               if (res.didCancel || res.errorCode || !res.assets || res.assets.length === 0) {
-                if (res.errorMessage) Alert.alert('Error', res.errorMessage);
+                if (res.errorMessage) showAlert('Error', res.errorMessage);
                 return;
               }
               const asset = res.assets[0];
@@ -191,7 +192,7 @@ export default function ProfileScreen() {
               }
             } catch (err: any) {
               console.log('Camera error:', err?.message);
-              Alert.alert('Error', 'Could not launch camera: ' + (err?.message || 'Unknown error'));
+              showAlert('Error', 'Could not launch camera: ' + (err?.message || 'Unknown error'));
             }
           },
         },
@@ -201,7 +202,7 @@ export default function ProfileScreen() {
             try {
               const res = await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
               if (res.didCancel || res.errorCode || !res.assets || res.assets.length === 0) {
-                if (res.errorMessage) Alert.alert('Error', res.errorMessage);
+                if (res.errorMessage) showAlert('Error', res.errorMessage);
                 return;
               }
               const asset = res.assets[0];
@@ -210,7 +211,7 @@ export default function ProfileScreen() {
               }
             } catch (err: any) {
               console.log('Gallery error:', err?.message);
-              Alert.alert('Error', 'Could not open gallery: ' + (err?.message || 'Unknown error'));
+              showAlert('Error', 'Could not open gallery: ' + (err?.message || 'Unknown error'));
             }
           },
         },

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { BottomSheet } from '../../../components/BottomSheet';
@@ -17,6 +16,7 @@ import { createOrder, verifyPayment } from '../../../api/payment';
 import { useAuthStore } from '../../../store/authStore';
 import { refreshWallet } from '../../../services/walletSync';
 import { CreditPackViewModel } from '../../../services/creditPacksCache';
+import { useAppAlert } from '../../../components/alerts/AppAlertProvider';
 
 interface PurchaseBottomSheetProps {
   pack: CreditPackViewModel | null;
@@ -27,6 +27,7 @@ interface PurchaseBottomSheetProps {
 
 export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: PurchaseBottomSheetProps) {
   const { colors } = useAppTheme();
+  const { alert: showAlert } = useAppAlert();
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('UPI');
@@ -42,7 +43,7 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
   const handlePay = async () => {
     if (!pack) return;
     if (!user?.brokerId) {
-      Alert.alert('Wallet unavailable', 'Your broker wallet could not be identified. Please sign in again.');
+      showAlert('Wallet unavailable', 'Your broker wallet could not be identified. Please sign in again.');
       return;
     }
     try {
@@ -103,7 +104,7 @@ export function PurchaseBottomSheet({ pack, visible, onClose, onSuccess }: Purch
       // Extract backend error message if this is an Axios error (400 Bad Request, etc.)
       const backendError = error?.response?.data?.message || error?.response?.data?.error;
       const errorMsg = backendError || error?.description || error?.message || 'Payment was cancelled or failed.';
-      Alert.alert('Payment Failed', errorMsg);
+      showAlert('Payment Failed', errorMsg);
     } finally {
       setLoading(false);
     }

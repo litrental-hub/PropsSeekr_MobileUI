@@ -1,5 +1,5 @@
 import apiClient from '../client';
-import { addListing, getMyListings, searchProperties } from '../property';
+import { addListing, getMyListings, searchProperties, uploadBulkTxtFile } from '../property';
 
 jest.mock('../client', () => ({
   __esModule: true,
@@ -89,5 +89,84 @@ describe('searchProperties', () => {
       budget: payload.budget,
       filters: payload.filters,
     }));
+  });
+});
+
+describe('uploadBulkTxtFile', () => {
+  beforeEach(() => {
+    mockedPost.mockReset();
+    jest.restoreAllMocks();
+  });
+
+  it('uses the authenticated multipart endpoint for a local Development upload', async () => {
+    mockedPost
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          job_id: 'local-job',
+          upload_mode: 'local',
+          upload_endpoint: '/bulk-imports/local-job/content',
+        },
+      })
+      .mockResolvedValueOnce({ data: { success: true, status: 'queued' } });
+
+    await expect(uploadBulkTxtFile('content://downloads/chat.txt', 'chat.txt'))
+      .resolves.toBe('local-job');
+
+    expect(mockedPost).toHaveBeenNthCalledWith(1, '/bulk-imports/uploads', {
+      fileName: 'chat.txt',
+      defaultCity: 'Indore',
+    });
+    expect(mockedPost).toHaveBeenNthCalledWith(
+      2,
+      '/bulk-imports/local-job/content',
+      expect.any(FormData),
+      expect.objectContaining({ timeout: 60000 }),
+    );
+  });
+
+  it('accepts the API snake_case upload_url for the production S3 flow', async () => {
+    mockedPost
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          job_id: 's3-job',
+          upload_mode: 's3',
+          upload_url: 'https://uploads.example.test/presigned',
+        },
+      })
+      .mockResolvedValueOnce({ data: { success: true, status: 'queued' } });
+    const fetchMock = jest.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ text: async () => 'message text' } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200 } as Response);
+
+    await expect(uploadBulkTxtFile('content://downloads/chat.txt', 'chat.txt'))
+      .resolves.toBe('s3-job');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://uploads.example.test/presigned', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'message text',
+    });
+    expect(mockedPost).toHaveBeenNthCalledWith(2, '/bulk-imports/s3-job/complete');
+  });
+
+  it('sends the selected fallback city and falls back to Indore for blank input', async () => {
+    mockedPost
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          job_id: 'local-job',
+          upload_mode: 'local',
+          upload_endpoint: '/bulk-imports/local-job/content',
+        },
+      })
+      .mockResolvedValueOnce({ data: { success: true, status: 'queued' } });
+
+    await uploadBulkTxtFile('content://downloads/chat.txt', 'chat.txt', '  ');
+    expect(mockedPost).toHaveBeenNthCalledWith(1, '/bulk-imports/uploads', {
+      fileName: 'chat.txt',
+      defaultCity: 'Indore',
+    });
   });
 });
